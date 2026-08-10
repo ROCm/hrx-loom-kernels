@@ -1,0 +1,19 @@
+load(
+    "@iree//loom/build_tools/bazel:defs.bzl",
+    "loom_kernel_library",
+    "loom_library",
+)
+
+package(default_visibility = ["//visibility:public"])
+
+loom_library(
+    name = "q8",
+    srcs = ["q8.loom"],
+)
+
+loom_kernel_library(
+    name = "q8_1_x4_f32",
+    srcs = ["q8_1_x4_f32.loom"],
+    compile_targets = ["//target/amdgpu:gfx11_generic"],
+    deps = [":q8"],
+)
