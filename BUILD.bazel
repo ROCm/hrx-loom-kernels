@@ -1,1 +1,12 @@
+load("@iree//build_tools/bazel:python.bzl", "iree_py_test")
+
 package(default_visibility = ["//visibility:public"])
+
+iree_py_test(
+    name = "dev_test",
+    srcs = [
+        "dev.py",
+        "dev_test.py",
+    ],
+    main = "dev_test.py",
+)

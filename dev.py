@@ -135,19 +135,32 @@ def _loom_sources(arguments: list[str]) -> list[Path]:
     return sorted(set(sources))
 
 
+def _select_loom_format_output(output: str) -> Path:
+    output_paths = [line.strip() for line in output.splitlines() if line.strip()]
+    executable_paths = [
+        Path(path)
+        for path in output_paths
+        if Path(path).name in {"loom-format", "loom-format.exe"}
+    ]
+    if len(executable_paths) != 1:
+        raise UserError(
+            "Expected one loom-format executable output, found "
+            f"{len(executable_paths)} among {len(output_paths)} outputs"
+        )
+    return executable_paths[0]
+
+
 def _resolve_loom_format() -> Path:
     _bazel(["build", LOOM_FORMAT_TARGET])
     output = _bazel(
-        ["cquery", LOOM_FORMAT_TARGET, "--output=files"],
+        ["cquery", LOOM_FORMAT_TARGET, "--output=files", "--color=no"],
         capture_output=True,
     )
-    output_paths = [line.strip() for line in output.splitlines() if line.strip()]
-    if len(output_paths) != 1:
-        raise UserError(f"Expected one loom-format output, found {len(output_paths)}")
+    executable_output = _select_loom_format_output(output)
     execution_root = Path(
-        _bazel(["info", "execution_root"], capture_output=True).strip()
+        _bazel(["info", "execution_root", "--color=no"], capture_output=True).strip()
     )
-    executable = execution_root / output_paths[0]
+    executable = execution_root / executable_output
     if not executable.is_file():
         raise UserError(f"Built loom-format output does not exist: {executable}")
     return executable
