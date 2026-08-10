@@ -18,6 +18,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent
 LOCAL_BAZELRC = REPOSITORY_ROOT / ".bazelrc.local"
 LOOM_FORMAT_TARGET = "@iree//loom/src/loom/tools/loom-format"
 LOOM_SOURCE_ROOTS = ("kernel", "model", "motif", "target")
+SOURCE_POLICY_TOOL = REPOSITORY_ROOT / "build_tools" / "bazel" / "source_policy.py"
 
 
 class UserError(Exception):
@@ -93,12 +94,30 @@ def _setup(args: argparse.Namespace) -> None:
     _bazel(["build", "--nobuild", "--lockfile_mode=update", "//..."])
 
 
+def _lint_repository() -> None:
+    _run(
+        [
+            sys.executable,
+            "-B",
+            str(SOURCE_POLICY_TOOL),
+            f"--repository-root={REPOSITORY_ROOT}",
+        ]
+    )
+
+
 def _build(args: argparse.Namespace) -> None:
+    _lint_repository()
     _bazel(["build", *_bazel_arguments(args.bazel_args), "//..."])
 
 
 def _test(args: argparse.Namespace) -> None:
+    _lint_repository()
     _bazel(["test", *_bazel_arguments(args.bazel_args), "//..."])
+
+
+def _lint(args: argparse.Namespace) -> None:
+    del args
+    _lint_repository()
 
 
 def _loom_sources(arguments: list[str]) -> list[Path]:
@@ -183,6 +202,12 @@ def _create_parser() -> argparse.ArgumentParser:
     )
     test_parser.add_argument("bazel_args", nargs=argparse.REMAINDER)
     test_parser.set_defaults(handler=_test)
+
+    lint_parser = subparsers.add_parser(
+        "lint",
+        help="Check repository architecture and dependency policy.",
+    )
+    lint_parser.set_defaults(handler=_lint)
 
     format_parser = subparsers.add_parser(
         "format",

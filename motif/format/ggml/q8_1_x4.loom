@@ -1,4 +1,4 @@
-// GGML Q8 physical-layout accessors and reusable quantization templates.
+// GGML Q8_1 x4 physical-layout accessors and quantization motifs.
 // Four logical 32-element Q8_1 blocks share one 144-byte physical group:
 //
 //   struct block_q8_1_x4 {

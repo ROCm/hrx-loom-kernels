@@ -1,0 +1,8 @@
+load("//build_tools/bazel:defs.bzl", "loom_motif_library")
+
+package(default_visibility = ["//visibility:public"])
+
+loom_motif_library(
+    name = "q8_1_x4",
+    srcs = ["q8_1_x4.loom"],
+)
