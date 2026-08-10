@@ -1,0 +1,4 @@
+try-import %workspace%/.bazelrc.local
+
+build --color=yes
+test --test_output=errors

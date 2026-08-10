@@ -1,0 +1,10 @@
+load("@iree//loom/build_tools/bazel:defs.bzl", "loom_compile_target")
+
+package(default_visibility = ["//visibility:public"])
+
+loom_compile_target(
+    name = "gfx11_generic",
+    artifact_extension = "hsaco",
+    backend = "amdgpu-hal",
+    target = "gfx11-generic",
+)
