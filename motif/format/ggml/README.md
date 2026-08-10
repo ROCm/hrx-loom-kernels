@@ -8,28 +8,17 @@ representation motifs; neither inherits a GGML launch ABI. Host loaders and
 command programs own GGUF parsing, and these motifs begin at the resulting
 buffer and preserved representation facts.
 
-## Implemented formats
+Format sources own their physical byte layout, element interpretation, block
+addressing, and links to the specification or implementation snapshot from
+which those contracts were derived. Reusable accessors are `func.def`
+operations; reusable encoders and decoders that require specialization are
+`func.template` operations. Neither form chooses grid dimensions or exposes a
+kernel launch ABI.
 
-| Format | Source | Components | Qualification |
-| --- | --- | --- | --- |
-| Q8_1 x4 | [`q8_1_x4.loom`](q8_1_x4.loom) | Logical-block and packed-word loads; one-group F32 quantization template | Canonical format and link checks; numerical coverage through the GGML quantization kernel |
-
-One Q8_1 x4 physical group contains four logical 32-element Q8_1 blocks. Its
-144-byte layout contains four `(scale, quantized_sum * scale)` F16 pairs followed
-by 32 packed I32 words holding 128 signed I8 values. The group template maps one
-32-lane wave to the complete group and publishes the packed values and metadata
-after workgroup-wide reductions.
-
-The current consumer is the
-[GGML-compatible F32 quantization kernel](../../../kernel/ggml/quantize/). Native
-GEMM, attention, or fused model kernels link this motif directly rather than
-depending on that compatibility wrapper.
+GGML-compatible kernels, native GEMM and attention kernels, and model-level
+fusions all link these motifs directly. This keeps formats such as Q4_K, Q6_K,
+or transient backend packings from being trapped inside one operator catalog.
 
 ## References
 
-The implementation reference snapshot is llama.cpp commit
-[`030ebb558a5820b444a8f836ed5cdd46c9b4bd7a`](https://github.com/ggml-org/llama.cpp/commit/030ebb558a5820b444a8f836ed5cdd46c9b4bd7a).
-
-- [GGML Vulkan Q8_1 x4 type definitions](https://github.com/ggml-org/llama.cpp/blob/030ebb558a5820b444a8f836ed5cdd46c9b4bd7a/ggml/src/ggml-vulkan/vulkan-shaders/types.glsl)
-- [GGML Vulkan Q8_1 quantization reference](https://github.com/ggml-org/llama.cpp/blob/030ebb558a5820b444a8f836ed5cdd46c9b4bd7a/ggml/src/ggml-vulkan/vulkan-shaders/quantize_q8_1.comp)
 - [GGUF format specification](https://github.com/ggml-org/ggml/blob/30bf8685ed4eb0a47f2b06229543327749904150/docs/gguf.md)
