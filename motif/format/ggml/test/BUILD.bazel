@@ -1,0 +1,12 @@
+load("//build_tools/bazel:defs.bzl", "loom_test_library")
+load("//target/amdgpu:profile.bzl", "AMDGPU_HARDWARE")
+
+package(default_visibility = ["//visibility:public"])
+
+loom_test_library(
+    name = "q4_k",
+    srcs = ["q4_k.loom"],
+    compile_targets = ["//target/amdgpu:gfx11_generic"],
+    deps = ["//motif/format/ggml:q4_k"],
+    execution_profiles = [AMDGPU_HARDWARE],
+)
