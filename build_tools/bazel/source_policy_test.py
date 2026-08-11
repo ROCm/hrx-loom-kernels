@@ -36,6 +36,21 @@ class SourcePolicyTest(unittest.TestCase):
             ["bad.loom: motif sources cannot declare kernel.def"],
         )
 
+    def test_test_package_accepts_private_kernel_definition(self):
+        violations = source_policy.check_sources(
+            "test",
+            [
+                (
+                    "wrapper.loom",
+                    "kernel.def @wrapper() {\n"
+                    "} launch() {\n"
+                    "  kernel.return\n"
+                    "}\n",
+                )
+            ],
+        )
+        self.assertEqual(violations, [])
+
     def test_kernel_requires_definition_across_package_sources(self):
         violations = source_policy.check_sources(
             "kernel",
@@ -78,6 +93,54 @@ class SourcePolicyTest(unittest.TestCase):
                 'loom_motif_library(name = "q3", srcs = ["q3.loom"])\n'
             )
             self.assertEqual(source_policy.check_repository(repository_root), [])
+
+    def test_repository_accepts_explicit_motif_test_package(self):
+        with TemporaryDirectory() as temporary_directory:
+            repository_root = Path(temporary_directory)
+            test_root = repository_root / "motif" / "format" / "weird" / "test"
+            test_root.mkdir(parents=True)
+            for readme_directory in (
+                repository_root / "motif",
+                repository_root / "motif" / "format",
+                repository_root / "motif" / "format" / "weird",
+                test_root,
+            ):
+                (readme_directory / "README.md").write_text("# Scope\n")
+            (test_root / "q3.loom").write_text(
+                "kernel.def @q3() {\n} launch() {\n  kernel.return\n}\n"
+            )
+            (test_root / "BUILD.bazel").write_text(
+                'load("//build_tools/bazel:defs.bzl", "loom_test_library")\n'
+                'loom_test_library(name = "q3", srcs = ["q3.loom"])\n'
+            )
+            self.assertEqual(source_policy.check_repository(repository_root), [])
+
+    def test_repository_test_package_requires_test_library_rule(self):
+        with TemporaryDirectory() as temporary_directory:
+            repository_root = Path(temporary_directory)
+            test_root = repository_root / "motif" / "format" / "weird" / "test"
+            test_root.mkdir(parents=True)
+            for readme_directory in (
+                repository_root / "motif",
+                repository_root / "motif" / "format",
+                repository_root / "motif" / "format" / "weird",
+                test_root,
+            ):
+                (readme_directory / "README.md").write_text("# Scope\n")
+            (test_root / "q3.loom").write_text(
+                "kernel.def @q3() {\n} launch() {\n  kernel.return\n}\n"
+            )
+            (test_root / "BUILD.bazel").write_text(
+                'load("//build_tools/bazel:defs.bzl", "loom_motif_library")\n'
+                'loom_motif_library(name = "q3", srcs = ["q3.loom"])\n'
+            )
+            self.assertEqual(
+                source_policy.check_repository(repository_root),
+                [
+                    "motif/format/weird/test/BUILD.bazel: test packages must "
+                    "declare loom_test_library",
+                ],
+            )
 
     def test_repository_rejects_policy_bypass_and_implicit_source(self):
         with TemporaryDirectory() as temporary_directory:

@@ -5,13 +5,16 @@ load(
     "@iree//loom/build_tools/bazel:defs.bzl",
     _loom_compile = "loom_compile",
     _loom_compile_target = "loom_compile_target",
+    _loom_execution_profile = "loom_execution_profile",
     _loom_kernel_library = "loom_kernel_library",
     _loom_library = "loom_library",
+    _loom_test_library = "loom_test_library",
     _loom_tools_toolchains = "loom_tools_toolchains",
 )
 
 loom_compile = _loom_compile
 loom_compile_target = _loom_compile_target
+loom_execution_profile = _loom_execution_profile
 loom_tools_toolchains = _loom_tools_toolchains
 
 def _is_package_or_subpackage(package, root):
@@ -118,3 +121,31 @@ def loom_kernel_library(
         visibility = visibility,
     )
     _declare_source_policy_test(name, "kernel", srcs, tags)
+
+def loom_test_library(
+        name,
+        srcs,
+        deps = [],
+        compile_targets = [],
+        execution_profiles = [],
+        tags = [],
+        visibility = None):
+    """Declares private wrapper programs in an explicit test package."""
+    package = native.package_name()
+    if "test" not in package.split("/"):
+        fail(
+            "loom_test_library must be declared below an explicit test/ " +
+            "package, got //%s" % package,
+        )
+    if _is_package_or_subpackage(package, "motif"):
+        _validate_motif_dependencies(package, deps)
+    _loom_test_library(
+        name = name,
+        srcs = srcs,
+        deps = deps,
+        compile_targets = compile_targets,
+        execution_profiles = execution_profiles,
+        tags = tags,
+        visibility = visibility,
+    )
+    _declare_source_policy_test(name, "test", srcs, tags)

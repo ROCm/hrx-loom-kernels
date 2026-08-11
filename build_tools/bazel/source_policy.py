@@ -50,6 +50,14 @@ def check_sources(layer: str, sources: Iterable[tuple[str, str]]) -> list[str]:
     return []
 
 
+def _package_policy(layer: str, relative_directory: Path) -> tuple[str, str]:
+    if "test" in relative_directory.parts:
+        return "test", "loom_test_library"
+    if layer == "kernel":
+        return "kernel", "loom_kernel_library"
+    return "motif", "loom_motif_library"
+
+
 def _check_scoped_readmes(repository_root: Path) -> list[str]:
     violations: list[str] = []
     checked_directories: set[Path] = set()
@@ -80,10 +88,7 @@ def _check_scoped_readmes(repository_root: Path) -> list[str]:
 def check_repository(repository_root: Path) -> list[str]:
     """Returns architecture-policy violations in a kernel-library checkout."""
     violations = _check_scoped_readmes(repository_root)
-    for layer, rule_name in (
-        ("kernel", "loom_kernel_library"),
-        ("motif", "loom_motif_library"),
-    ):
+    for layer in ("kernel", "motif"):
         layer_root = repository_root / layer
         if not layer_root.is_dir():
             continue
@@ -92,11 +97,12 @@ def check_repository(repository_root: Path) -> list[str]:
             sources_by_directory[source_path.parent].append(source_path)
         for source_directory, source_paths in sorted(sources_by_directory.items()):
             relative_directory = source_directory.relative_to(repository_root)
+            source_layer, rule_name = _package_policy(layer, relative_directory)
             named_sources = [
                 (str(path.relative_to(repository_root)), path.read_text())
                 for path in sorted(source_paths)
             ]
-            violations.extend(check_sources(layer, named_sources))
+            violations.extend(check_sources(source_layer, named_sources))
 
             build_path = source_directory / "BUILD.bazel"
             if not build_path.is_file():
@@ -115,7 +121,8 @@ def check_repository(repository_root: Path) -> list[str]:
                 )
             if not re.search(rf"\b{rule_name}\s*\(", build_text):
                 violations.append(
-                    f"{build_path.relative_to(repository_root)}: {layer} packages "
+                    f"{build_path.relative_to(repository_root)}: "
+                    f"{source_layer} packages "
                     f"must declare {rule_name}"
                 )
             for source_path in sorted(source_paths):
@@ -130,7 +137,7 @@ def check_repository(repository_root: Path) -> list[str]:
 
 def _create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--layer", choices=["kernel", "motif"])
+    parser.add_argument("--layer", choices=["kernel", "motif", "test"])
     parser.add_argument("--repository-root", type=Path)
     parser.add_argument("sources", metavar="SOURCE", nargs="*")
     return parser
