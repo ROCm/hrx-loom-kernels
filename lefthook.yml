@@ -1,0 +1,13 @@
+# Copyright 2026 AMD ROCm™ Software
+# SPDX-License-Identifier: MIT
+
+min_version: 2.1.9
+
+pre-commit:
+  # Stream the formatter build so a cold toolchain fetch is visible. A rewrite
+  # is staged exactly, then fails the commit so the canonical diff is reviewed.
+  follow: true
+  fail_on_changes: always
+  commands:
+    loom-format:
+      run: python dev.py format --fix --staged

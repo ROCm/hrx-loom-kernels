@@ -123,10 +123,18 @@ qualification policy:
 
 ```shell
 python dev.py setup --release
+python dev.py hook
+python dev.py format --check
 python dev.py lint
 python dev.py test
 python dev.py build
 ```
+
+`python dev.py hook` installs the repository's Lefthook pre-commit hook. The
+hook formats only staged `.loom` files, stages their canonical form, verifies
+the result, and stops the commit whenever it makes a change so the rewrite can
+be reviewed. It refuses partially staged `.loom` files rather than absorbing
+unstaged hunks into the commit.
 
 Compiler co-development keeps the same BUILD labels and policy checks. A local
 HRX worktree makes Bazel rebuild changed compiler tools directly from
@@ -137,8 +145,11 @@ python dev.py setup --loom-source /path/to/hrx-system
 python dev.py test
 ```
 
-`python dev.py format` rewrites every `.loom` source through the selected
-compiler's canonical formatter. Passing paths formats only those files.
+`python dev.py format --fix` rewrites every `.loom` source through the selected
+compiler's canonical formatter and verifies the result. `--check` is read-only,
+and passing paths limits either mode to those files. Direct
+`bazelisk test //...` invocations retain per-library format tests even when the
+Git hook is not installed.
 
 `loom_motif_library` emits a linkable `.loombc` archive and validates that its
 sources remain non-launchable. `loom_kernel_library` adds launchable kernels,
