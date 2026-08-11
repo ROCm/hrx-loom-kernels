@@ -30,14 +30,14 @@ func.def inline @ggml_q8_1_x4_block(%q8_input: buffer, %row_byte_base: offset, %
   %group_byte_add = index.scale %group, %group_bytes : index, offset -> offset
   %group_byte_base = index.add %row_byte_base, %group_byte_add : offset
   %payload_byte_base = index.add %group_byte_base, %payload_byte_add : offset
-  %ds_view = buffer.view %q8_input[%group_byte_base] : buffer -> view<8xf16, #dense>
-  %payload_view = buffer.view %q8_input[%payload_byte_base] : buffer -> view<32xi32, #dense>
+  %ds_view = buffer.view %q8_input[%group_byte_base] : buffer -> view<8xf16>
+  %payload_view = buffer.view %q8_input[%payload_byte_base] : buffer -> view<32xi32>
   %d_index = index.mul %inner, %c2 : index
   %s_index = index.add %d_index, %c1 : index
   %word_index = index.mul %inner, %c8 : index
-  %d_f16 = view.load %ds_view[%d_index] : view<8xf16, #dense> -> f16
-  %s_f16 = view.load %ds_view[%s_index] : view<8xf16, #dense> -> f16
-  %words = vector.load %payload_view[%word_index] : view<32xi32, #dense> -> vector<8xi32>
+  %d_f16 = view.load %ds_view[%d_index] : view<8xf16> -> f16
+  %s_f16 = view.load %ds_view[%s_index] : view<8xf16> -> f16
+  %words = vector.load %payload_view[%word_index] : view<32xi32> -> vector<8xi32>
   %values = vector.bitcast %words : vector<8xi32> to vector<32xi8>
   %d = scalar.extf %d_f16 : f16 to f32
   %s = scalar.extf %s_f16 : f16 to f32
@@ -60,13 +60,13 @@ func.def inline @ggml_q8_1_x4_word(%q8_input: buffer, %row_byte_base: offset, %q
   %group_byte_add = index.scale %group, %group_bytes : index, offset -> offset
   %group_byte_base = index.add %row_byte_base, %group_byte_add : offset
   %payload_byte_base = index.add %group_byte_base, %payload_byte_add : offset
-  %ds_view = buffer.view %q8_input[%group_byte_base] : buffer -> view<8xf16, #dense>
-  %payload_view = buffer.view %q8_input[%payload_byte_base] : buffer -> view<32xi32, #dense>
+  %ds_view = buffer.view %q8_input[%group_byte_base] : buffer -> view<8xf16>
+  %payload_view = buffer.view %q8_input[%payload_byte_base] : buffer -> view<32xi32>
   %d_index = index.mul %inner, %c2 : index
   %inner_word_base = index.mul %inner, %c8 : index
   %word_index = index.add %inner_word_base, %word0 : index
-  %d_f16 = view.load %ds_view[%d_index] : view<8xf16, #dense> -> f16
-  %packed = vector.load %payload_view[%word_index] : view<32xi32, #dense> -> vector<1xi32>
+  %d_f16 = view.load %ds_view[%d_index] : view<8xf16> -> f16
+  %packed = vector.load %payload_view[%word_index] : view<32xi32> -> vector<1xi32>
   %values = vector.bitcast %packed : vector<1xi32> to vector<4xi8>
   %d = scalar.extf %d_f16 : f16 to f32
   func.return %values, %d : vector<4xi8>, f32
@@ -107,25 +107,25 @@ func.template<ggml.quantize_q8_1_x4.group_body> device @ggml_quantize_q8_1_x4_gr
   %input_block_base = index.add %group_element_base, %block_element_add : index
   %input_index = index.add %input_block_base, %word_element_add : index
   %input_noalias, %output_noalias = buffer.assume.noalias %input, %output : buffer, buffer
-  %input_view = buffer.view %input_noalias[%c0_offset] : buffer -> view<[%launched_element_count]xf32, #dense>
-  %input_values = vector.load %input_view[%input_index] : view<[%launched_element_count]xf32, #dense> -> vector<4xf32>
+  %input_view = buffer.view %input_noalias[%c0_offset] : buffer -> view<[%launched_element_count]xf32>
+  %input_values = vector.load %input_view[%input_index] : view<[%launched_element_count]xf32> -> vector<4xf32>
   %absolute_values = vector.absf %input_values : vector<4xf32>
   %thread_max = vector.reduce<maxnumf> %absolute_values, %c0_f32 : vector<4xf32>, f32
-  %scratch = buffer.alloca %scratch_bytes {base_alignment = 16, memory_space = workgroup} : buffer
-  %scratch_values = buffer.view %scratch[%c0_offset] : buffer -> view<32xf32, #dense>
-  %scratch_d = buffer.view %scratch[%scratch_d_byte_add] : buffer -> view<4xf32, #dense>
-  view.store %thread_max, %scratch_values[%lane] : f32, view<32xf32, #dense>
-  kernel.barrier<workgroup> {ordering = acq_rel, scope = workgroup}
+  %scratch = buffer.alloca<workgroup> align(16) %scratch_bytes : buffer
+  %scratch_values = buffer.view %scratch[%c0_offset] : buffer -> view<32xf32>
+  %scratch_d = buffer.view %scratch[%scratch_d_byte_add] : buffer -> view<4xf32>
+  view.store %thread_max, %scratch_values[%lane] : f32, view<32xf32>
+  kernel.barrier<workgroup> scope(workgroup) ordering(acq_rel)
   %is_cohort_leader = index.cmp eq, %word_in_block, %c0 : index
   scf.if %is_cohort_leader {
     %cohort_base = index.mul %block_in_group, %c8 : index
-    %cohort_maxima = vector.load %scratch_values[%cohort_base] : view<32xf32, #dense> -> vector<8xf32>
+    %cohort_maxima = vector.load %scratch_values[%cohort_base] : view<32xf32> -> vector<8xf32>
     %amax = vector.reduce<maxnumf> %cohort_maxima, %c0_f32 : vector<8xf32>, f32
     %d = scalar.divf %amax, %c127 : f32
-    view.store %d, %scratch_d[%block_in_group] : f32, view<4xf32, #dense>
+    view.store %d, %scratch_d[%block_in_group] : f32, view<4xf32>
   }
-  kernel.barrier<workgroup> {ordering = acq_rel, scope = workgroup}
-  %d = view.load %scratch_d[%block_in_group] : view<4xf32, #dense> -> f32
+  kernel.barrier<workgroup> scope(workgroup) ordering(acq_rel)
+  %d = view.load %scratch_d[%block_in_group] : view<4xf32> -> f32
   %d_nonzero = scalar.cmpf one, %d, %c0_f32 : f32
   %d_inverse = scf.if %d_nonzero -> (f32) {
     %inverse = scalar.divf %c1_f32, %d : f32
@@ -142,28 +142,28 @@ func.template<ggml.quantize_q8_1_x4.group_body> device @ggml_quantize_q8_1_x4_gr
   %group_byte_offset = index.cast %group_byte_index : index to offset
   %payload_byte_index = index.add %group_byte_index, %payload_byte_add : index
   %payload_byte_offset = index.cast %payload_byte_index : index to offset
-  %group_ds = buffer.view %output_noalias[%group_byte_offset] : buffer -> view<8xf16, #dense>
-  %group_qs = buffer.view %output_noalias[%payload_byte_offset] : buffer -> view<32xi32, #dense>
+  %group_ds = buffer.view %output_noalias[%group_byte_offset] : buffer -> view<8xf16>
+  %group_qs = buffer.view %output_noalias[%payload_byte_offset] : buffer -> view<32xi32>
   %packed_word_index0 = index.add %block_word_add, %word_in_block : index
   %packed_word_index = index.assume %packed_word_index0 [range(%packed_word_index0, 0, 31)] : index
   scf.if %publish_output {
-    vector.store %packed_word, %group_qs[%packed_word_index] : vector<1xi32>, view<32xi32, #dense>
+    vector.store %packed_word, %group_qs[%packed_word_index] : vector<1xi32>, view<32xi32>
   }
   %thread_sum = vector.reduce<addf> %rounded_values, %c0_f32 : vector<4xf32>, f32
-  view.store %thread_sum, %scratch_values[%lane] : f32, view<32xf32, #dense>
-  kernel.barrier<workgroup> {ordering = acq_rel, scope = workgroup}
+  view.store %thread_sum, %scratch_values[%lane] : f32, view<32xf32>
+  kernel.barrier<workgroup> scope(workgroup) ordering(acq_rel)
   %publishes_metadata = scalar.andi %is_cohort_leader, %publish_output : i1
   scf.if %publishes_metadata {
     %cohort_base = index.mul %block_in_group, %c8 : index
-    %cohort_sums = vector.load %scratch_values[%cohort_base] : view<32xf32, #dense> -> vector<8xf32>
+    %cohort_sums = vector.load %scratch_values[%cohort_base] : view<32xf32> -> vector<8xf32>
     %quantized_sum = vector.reduce<addf> %cohort_sums, %c0_f32 : vector<8xf32>, f32
     %s = scalar.mulf %quantized_sum, %d : f32
     %d_f16 = scalar.fptrunc %d : f32 to f16
     %s_f16 = scalar.fptrunc %s : f32 to f16
     %ds_index = index.mul %block_in_group, %c2 : index
-    view.store %d_f16, %group_ds[%ds_index] : f16, view<8xf16, #dense>
+    view.store %d_f16, %group_ds[%ds_index] : f16, view<8xf16>
     %s_index = index.add %ds_index, %c1 : index
-    view.store %s_f16, %group_ds[%s_index] : f16, view<8xf16, #dense>
+    view.store %s_f16, %group_ds[%s_index] : f16, view<8xf16>
   }
   func.return
 }

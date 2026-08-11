@@ -7,12 +7,12 @@ load(
     _loom_compile_target = "loom_compile_target",
     _loom_kernel_library = "loom_kernel_library",
     _loom_library = "loom_library",
-    _loom_tools_toolchain = "loom_tools_toolchain",
+    _loom_tools_toolchains = "loom_tools_toolchains",
 )
 
 loom_compile = _loom_compile
 loom_compile_target = _loom_compile_target
-loom_tools_toolchain = _loom_tools_toolchain
+loom_tools_toolchains = _loom_tools_toolchains
 
 def _is_package_or_subpackage(package, root):
     return package == root or package.startswith(root + "/")

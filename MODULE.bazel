@@ -11,6 +11,6 @@ bazel_dep(name = "iree", version = "0.0.0")
 # never edits this file.
 git_override(
     module_name = "iree",
-    commit = "c10b509cdc6769d928e5ea7b89b2c0886fe5ba18",
+    commit = "3246f59c5e1d4f000075b9be30decaa5e78e404c",
     remote = "https://github.com/ROCm/hrx-system.git",
 )
