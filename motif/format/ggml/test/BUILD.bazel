@@ -10,3 +10,11 @@ loom_test_library(
     deps = ["//motif/format/ggml:q4_k"],
     execution_profiles = [AMDGPU_HARDWARE],
 )
+
+loom_test_library(
+    name = "q6_k",
+    srcs = ["q6_k.loom"],
+    compile_targets = ["//target/amdgpu:gfx11_generic"],
+    deps = ["//motif/format/ggml:q6_k"],
+    execution_profiles = [AMDGPU_HARDWARE],
+)

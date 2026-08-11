@@ -1,0 +1,52 @@
+// GGML Q6_K carrier accessors.
+//
+// Reference snapshot: llama.cpp commit
+// e9fa0781f1c25fc4fe8c86be1edc6970661ad6f0.
+//
+//   https://github.com/ggml-org/llama.cpp/blob/e9fa0781f1c25fc4fe8c86be1edc6970661ad6f0/ggml/src/ggml-common.h
+//   https://github.com/ggml-org/llama.cpp/blob/e9fa0781f1c25fc4fe8c86be1edc6970661ad6f0/ggml/src/ggml-cpu/quants.c
+//
+// One 210-byte Q6_K block stores 256 six-bit codes in separate low four-bit
+// and high two-bit planes. The encoded values have a zero point of 32. Sixteen
+// signed group scales and one F16 block scale remain explicit caller values so
+// direct integer contraction and floating-point materialization can choose
+// different schedules around the same carrier accessors.
+// Merges four selected low/high fields and converts each biased six-bit code
+// to a signed i8 value in [-32, 31]. `low_nibble` selects the low or high
+// nibble of each byte; `high_pair` selects one of four two-bit fields.
+func.def inline @ggml_q6_k_unpack_codes4(%low_word: vector<1xi32>, %high_word: vector<1xi32>, %low_nibble: index, %high_pair: index) -> (vector<4xi8>) {
+  %bounded_low_nibble = index.assume %low_nibble [range(%low_nibble, 0, 1)] : index
+  %bounded_high_pair = index.assume %high_pair [range(%high_pair, 0, 3)] : index
+  %c2 = index.constant 2 : index
+  %c4 = index.constant 4 : index
+  %c1_i32v = vector.constant 1 : vector<1xi32>
+  %c2_i32v = vector.constant 2 : vector<1xi32>
+  %c4_i32v = vector.constant 4 : vector<1xi32>
+  %low_mask = vector.constant 252645135 : vector<1xi32>
+  %high_mask = vector.constant 50529027 : vector<1xi32>
+  %low5_mask = vector.constant 522133279 : vector<1xi32>
+  %bias_bit_mask = vector.constant 538976288 : vector<1xi32>
+  %negative_extension_mask = vector.constant -522133280 : vector<1xi32>
+  %low_shift_index = index.mul %bounded_low_nibble, %c4 : index
+  %low_shift_i32 = index.cast %low_shift_index : index to i32
+  %low_shift = vector.splat %low_shift_i32 : vector<1xi32>
+  %high_shift_index = index.mul %bounded_high_pair, %c2 : index
+  %high_shift_i32 = index.cast %high_shift_index : index to i32
+  %high_shift = vector.splat %high_shift_i32 : vector<1xi32>
+  %low_shifted = vector.shrui %low_word, %low_shift : vector<1xi32>
+  %low = vector.andi %low_shifted, %low_mask : vector<1xi32>
+  %high_shifted = vector.shrui %high_word, %high_shift : vector<1xi32>
+  %high_low = vector.andi %high_shifted, %high_mask : vector<1xi32>
+  %high = vector.shli %high_low, %c4_i32v : vector<1xi32>
+  %biased_code = vector.ori %low, %high : vector<1xi32>
+  %low5 = vector.andi %biased_code, %low5_mask : vector<1xi32>
+  %bias_bit = vector.andi %biased_code, %bias_bit_mask : vector<1xi32>
+  %bit6 = vector.shli %bias_bit, %c1_i32v : vector<1xi32>
+  %bit7 = vector.shli %bias_bit, %c2_i32v : vector<1xi32>
+  %high01 = vector.ori %bias_bit, %bit6 : vector<1xi32>
+  %extended_bias_bits = vector.ori %high01, %bit7 : vector<1xi32>
+  %sign_extension = vector.xori %extended_bias_bits, %negative_extension_mask : vector<1xi32>
+  %signed_word = vector.ori %low5, %sign_extension : vector<1xi32>
+  %codes = vector.bitcast %signed_word : vector<1xi32> to vector<4xi8>
+  func.return %codes : vector<4xi8>
+}
