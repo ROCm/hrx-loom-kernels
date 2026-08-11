@@ -18,6 +18,10 @@ kernel launch ABI.
 GGML-compatible kernels, native GEMM and attention kernels, and model-level
 fusions all link these motifs directly. This keeps formats such as Q4_K, Q6_K,
 or transient backend packings from being trapped inside one operator catalog.
+Consumers can depend on individual format targets or link
+`//motif/format/ggml:ggml` as the complete GGML format archive. The aggregate
+has no sources of its own: Bazel links the already-checked component archives
+once and leaves target specialization to the consuming kernel or program.
 
 ## References
 

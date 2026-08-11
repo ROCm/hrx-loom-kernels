@@ -16,3 +16,12 @@ loom_motif_library(
     name = "q8_1_x4",
     srcs = ["q8_1_x4.loom"],
 )
+
+loom_motif_library(
+    name = "ggml",
+    deps = [
+        ":q4_k",
+        ":q6_k",
+        ":q8_1_x4",
+    ],
+)

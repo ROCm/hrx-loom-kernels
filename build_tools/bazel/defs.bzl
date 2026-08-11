@@ -82,7 +82,7 @@ def _declare_source_policy_test(name, layer, srcs, tags):
 
 def loom_motif_library(
         name,
-        srcs,
+        srcs = [],
         deps = [],
         tags = [],
         visibility = None):
@@ -98,7 +98,8 @@ def loom_motif_library(
         tags = tags,
         visibility = visibility,
     )
-    _declare_source_policy_test(name, "motif", srcs, tags)
+    if srcs:
+        _declare_source_policy_test(name, "motif", srcs, tags)
 
 def loom_kernel_library(
         name,
