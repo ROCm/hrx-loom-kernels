@@ -89,7 +89,9 @@ invocation identity changed. A shared motif edit therefore reruns the archive
 closure that actually changed; an edit that produces byte-identical archives is
 reported as potentially affected without repeating the physical benchmark.
 `--rerun-all` deliberately captures fresh measurements for every selected
-module.
+module. A changed benchmark runner invalidates every module in the selected
+scope, so compiler development can use a narrow target pattern while ordinary
+`.loom` authoring retains artifact-level reuse.
 
 Configured `cquery` edges map every module back to its exact `.loom` source
 closure. `latest.json` records that graph together with changed sources,
@@ -114,9 +116,26 @@ Each invocation also writes an immutable manifest under `runs/`. Native
 `iree-benchmark-loom` bundles live below `artifacts/` and retain their public
 `results.json` or `results.jsonl` schema; unchanged modules point back to the
 matching earlier bundle instead of copying or reinterpreting it. The mutable
-`index.json` keeps prior module evidence available across targeted subsets.
-`--target=//kernel/ggml/quantize:q8_1_x4_f32` limits an invocation to one archive,
-and arguments after `--` are passed directly to `iree-benchmark-loom`.
+`index.json` keeps prior module evidence available across targeted subsets. The
+workspace is rooted at `--output-dir`, not in Bazel's output tree, so build-cache
+cleanup does not erase measurement history.
+
+`--target` accepts Bazel target patterns. Recursive scopes select admitted
+benchmark modules below a package, exact library labels select one module, and
+repeating the option forms a union:
+
+```shell
+python dev.py benchmark \
+  --config=amdgpu \
+  --device=amdgpu://0 \
+  --output-dir="$SWEEP_ROOT" \
+  --target=//kernel/ggml/... \
+  --target=//motif/format/ggml/test/... \
+  -- \
+  --measure=dispatch_complete
+```
+
+Arguments after `--` are passed directly to `iree-benchmark-loom`.
 
 These captures are comparable when they come from the same stable machine,
 software configuration, measurement policy, and exclusive-use discipline.
@@ -186,6 +205,15 @@ python dev.py lint
 python dev.py test
 python dev.py build
 python dev.py benchmark --help
+```
+
+`dev.py test` accepts the same repeated Bazel target-pattern selection used by
+benchmark sweeps. This keeps compiler and kernel iteration bounded to the
+working package while retaining ordinary Bazel test caching:
+
+```shell
+python dev.py test --target=//kernel/ggml/...
+python dev.py test --target=//motif/format/ggml/test/... -- --config=amdgpu
 ```
 
 `python dev.py hook` installs the repository's Lefthook pre-commit hook. The

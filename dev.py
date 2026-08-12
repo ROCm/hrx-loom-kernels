@@ -114,7 +114,8 @@ def _build(args: argparse.Namespace) -> None:
 
 def _test(args: argparse.Namespace) -> None:
     _lint_repository()
-    _bazel(["test", *_bazel_arguments(args.bazel_args), "//..."])
+    targets = args.targets or ["//..."]
+    _bazel(["test", *_bazel_arguments(args.bazel_args), *targets])
 
 
 def _benchmark(args: argparse.Namespace) -> None:
@@ -289,6 +290,19 @@ def _hook(args: argparse.Namespace) -> None:
     _run([lefthook, "install"])
 
 
+def _add_target_pattern_argument(
+    parser: argparse.ArgumentParser, help_text: str
+) -> None:
+    parser.add_argument(
+        "--target",
+        action="append",
+        default=[],
+        dest="targets",
+        metavar="PATTERN",
+        help=help_text,
+    )
+
+
 def _create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -321,6 +335,11 @@ def _create_parser() -> argparse.ArgumentParser:
         "test",
         help="Run format, planning, and compilation policy checks.",
     )
+    _add_target_pattern_argument(
+        test_parser,
+        "Test one Bazel target pattern instead of the complete repository "
+        "(repeatable).",
+    )
     test_parser.add_argument("bazel_args", nargs=argparse.REMAINDER)
     test_parser.set_defaults(handler=_test)
 
@@ -351,13 +370,10 @@ def _create_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Execute every selected module even when prior evidence matches.",
     )
-    benchmark_parser.add_argument(
-        "--target",
-        action="append",
-        default=[],
-        dest="targets",
-        metavar="LABEL",
-        help="Benchmark one repository archive instead of the discovered set.",
+    _add_target_pattern_argument(
+        benchmark_parser,
+        "Benchmark modules selected by one Bazel target pattern instead of "
+        "the complete corpus (repeatable).",
     )
     benchmark_parser.add_argument(
         "benchmark_args",
