@@ -17,6 +17,10 @@ concurrency:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   linux_bazel:
     name: Linux / Bazel / Source Loom
@@ -50,3 +54,193 @@ jobs:
 
       - name: Test libraries with source-built Loom tools
         run: python dev.py test
+
+  linux_bazel_amdgpu_build:
+    name: Linux / Bazel / AMDGPU Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    container:
+      image: rocm/dev-ubuntu-24.04@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054
+    env:
+      AR: /opt/rocm/llvm/bin/llvm-ar
+      CC: /opt/rocm/llvm/bin/clang
+      CXX: /opt/rocm/llvm/bin/clang++
+      LOOM_AMDGPU_EXECUTION_QUERY: 'attr(tags, "loom-execution-profile=amdgpu_hardware", tests(//...))'
+      LOOM_AMDGPU_TARGETS: gfx9-generic,gfx90a,gfx9-4-generic,gfx10-1-generic,gfx10-3-generic,gfx11-generic,gfx12-generic
+    steps:
+      - name: Install source transport
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install \
+            --yes --no-install-recommends git=1:2.43.0-1ubuntu7.3
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Adjust git config
+        run: git config --global --add safe.directory "$PWD"
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # v0.19.0
+        with:
+          bazelisk-cache: true
+          bazelisk-version: "1.29.0"
+          cache-save: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          disk-cache: amdgpu-${{ github.run_id }}
+          repository-cache: true
+
+      - name: Build AMDGPU execution closure
+        run: |
+          mkdir -p "${RUNNER_TEMP}/bazel-profiles"
+          execution_query_output=$(
+            bazel query "${LOOM_AMDGPU_EXECUTION_QUERY}" --output=label
+          )
+          if [[ -z "${execution_query_output}" ]]; then
+            echo "No AMDGPU hardware execution targets were declared" >&2
+            exit 1
+          fi
+          mapfile -t execution_targets < <(sort <<<"${execution_query_output}")
+          printf 'Building %s\n' "${execution_targets[@]}"
+          bazel build \
+            --config=amdgpu \
+            --@iree//runtime/src/iree/hal/drivers/amdgpu:targets="${LOOM_AMDGPU_TARGETS}" \
+            --profile="${RUNNER_TEMP}/bazel-profiles/amdgpu-build.profile.gz" \
+            "${execution_targets[@]}"
+
+      - name: Upload AMDGPU build profile
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bazel-profile-amdgpu-build-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bazel-profiles/amdgpu-build.profile.gz
+          if-no-files-found: error
+          compression-level: 0
+
+  linux_bazel_amdgpu_execute:
+    name: ${{ matrix.name }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: linux_bazel_amdgpu_build
+    runs-on: ${{ matrix.runner_label }}
+    continue-on-error: ${{ matrix.advisory }}
+    timeout-minutes: 20
+    container:
+      image: rocm/dev-ubuntu-24.04@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054
+      options: >-
+        --ipc host
+        --group-add video
+        --device /dev/kfd
+        --device /dev/dri
+        --group-add 993
+        --group-add 992
+        --group-add 110
+        --ulimit memlock=-1:-1
+        --security-opt seccomp=unconfined
+        --env-file /etc/podinfo/gha-gpu-isolation-settings
+        --user 0:0
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux / AMDGPU / gfx942
+            advisory: true
+            processor_pattern: ^gfx942$
+            runner_label: linux-gfx942-1gpu-ccs-csp-ossci-rocm
+            target_name: gfx942
+          - name: Linux / AMDGPU / gfx110X
+            advisory: true
+            processor_pattern: ^gfx110[0-3]$
+            runner_label: linux-gfx110X-gpu-rocm
+            target_name: gfx110X
+          - name: Linux / AMDGPU / gfx1150
+            advisory: true
+            processor_pattern: ^gfx1150$
+            runner_label: linux-gfx1150-gpu-rocm
+            target_name: gfx1150
+          - name: Linux / AMDGPU / gfx1151
+            advisory: true
+            processor_pattern: ^gfx1151$
+            runner_label: linux-gfx1151-gpu-rocm
+            target_name: gfx1151
+          - name: Linux / AMDGPU / gfx120X
+            advisory: true
+            processor_pattern: ^gfx120[01]$
+            runner_label: linux-gfx120X-gpu-rocm
+            target_name: gfx120X
+    env:
+      AR: /opt/rocm/llvm/bin/llvm-ar
+      CC: /opt/rocm/llvm/bin/clang
+      CXX: /opt/rocm/llvm/bin/clang++
+      IREE_HAL_AMDGPU_LIBHSA_PATH: /opt/rocm/lib/libhsa-runtime64.so.1
+      LD_LIBRARY_PATH: /opt/rocm/lib:/opt/rocm/lib/rocm_sysdeps/lib
+      LOOM_AMDGPU_EXECUTION_QUERY: 'attr(tags, "loom-execution-profile=amdgpu_hardware", tests(//...))'
+      LOOM_AMDGPU_TARGETS: gfx9-generic,gfx90a,gfx9-4-generic,gfx10-1-generic,gfx10-3-generic,gfx11-generic,gfx12-generic
+      ROCR_VISIBLE_DEVICES: "0"
+    steps:
+      - name: Install source transport
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install \
+            --yes --no-install-recommends git=1:2.43.0-1ubuntu7.3
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Adjust git config
+        run: git config --global --add safe.directory "$PWD"
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # v0.19.0
+        with:
+          bazelisk-cache: true
+          bazelisk-version: "1.29.0"
+          cache-save: false
+          disk-cache: amdgpu-${{ github.run_id }}
+          repository-cache: true
+
+      - name: Validate physical device
+        env:
+          PROCESSOR_PATTERN: ${{ matrix.processor_pattern }}
+        run: |
+          processor=$(
+            /opt/rocm/bin/rocminfo |
+              awk '$1 == "Name:" && $2 ~ /^gfx[0-9]+$/ { print $2; exit }'
+          )
+          if [[ -z "${processor}" ]]; then
+            echo "rocminfo did not report an AMDGPU processor" >&2
+            exit 1
+          fi
+          if [[ ! "${processor}" =~ ${PROCESSOR_PATTERN} ]]; then
+            echo "Expected ${PROCESSOR_PATTERN}, found ${processor}" >&2
+            exit 1
+          fi
+          echo "Physical device: ${processor}"
+
+      - name: Execute AMDGPU correctness tests
+        run: |
+          mkdir -p "${RUNNER_TEMP}/bazel-profiles"
+          execution_query_output=$(
+            bazel query "${LOOM_AMDGPU_EXECUTION_QUERY}" --output=label
+          )
+          if [[ -z "${execution_query_output}" ]]; then
+            echo "No AMDGPU hardware execution targets were declared" >&2
+            exit 1
+          fi
+          mapfile -t execution_targets < <(sort <<<"${execution_query_output}")
+          printf 'Executing %s\n' "${execution_targets[@]}"
+          bazel test \
+            --config=amdgpu \
+            --@iree//runtime/src/iree/hal/drivers/amdgpu:targets="${LOOM_AMDGPU_TARGETS}" \
+            --nocache_test_results \
+            --profile="${RUNNER_TEMP}/bazel-profiles/amdgpu-execute.profile.gz" \
+            --test_env="IREE_HAL_AMDGPU_LIBHSA_PATH=${IREE_HAL_AMDGPU_LIBHSA_PATH}" \
+            --test_env="LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" \
+            "${execution_targets[@]}"
+
+      - name: Upload AMDGPU execution profile
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bazel-profile-${{ matrix.target_name }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bazel-profiles/amdgpu-execute.profile.gz
+          if-no-files-found: error
+          compression-level: 0
