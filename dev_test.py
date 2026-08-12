@@ -15,6 +15,47 @@ import dev
 from build_tools import benchmark_sweep
 
 
+class TestCommandTest(unittest.TestCase):
+    def test_runs_selected_bazel_target_patterns(self):
+        parser = dev._create_parser()
+        args = parser.parse_args(
+            [
+                "test",
+                "--target=//kernel/gemm/...",
+                "--target=//motif/format/ggml/test/...",
+                "--",
+                "--config=amdgpu",
+            ]
+        )
+
+        with (
+            mock.patch.object(dev, "_lint_repository") as lint_repository,
+            mock.patch.object(dev, "_bazel") as bazel,
+        ):
+            dev._test(args)
+
+        lint_repository.assert_called_once_with()
+        bazel.assert_called_once_with(
+            [
+                "test",
+                "--config=amdgpu",
+                "//kernel/gemm/...",
+                "//motif/format/ggml/test/...",
+            ]
+        )
+
+    def test_defaults_to_complete_repository(self):
+        args = dev._create_parser().parse_args(["test"])
+
+        with (
+            mock.patch.object(dev, "_lint_repository"),
+            mock.patch.object(dev, "_bazel") as bazel,
+        ):
+            dev._test(args)
+
+        bazel.assert_called_once_with(["test", "//..."])
+
+
 class BenchmarkCommandTest(unittest.TestCase):
     def test_parser_keeps_build_and_runner_configuration_separate(self):
         parser = dev._create_parser()
@@ -25,7 +66,8 @@ class BenchmarkCommandTest(unittest.TestCase):
                 "--config=amdgpu",
                 "--device=amdgpu://0",
                 "--output-dir=.notes/benchmarks/gfx1100",
-                "--target=//kernel/example:example",
+                "--target=//kernel/gemm/...",
+                "--target=//motif/format/ggml/test/...",
                 "--",
                 "--measure=dispatch_complete",
             ]
@@ -33,7 +75,10 @@ class BenchmarkCommandTest(unittest.TestCase):
 
         self.assertEqual(args.configs, ["amdgpu"])
         self.assertEqual(args.device, "amdgpu://0")
-        self.assertEqual(args.targets, ["//kernel/example:example"])
+        self.assertEqual(
+            args.targets,
+            ["//kernel/gemm/...", "//motif/format/ggml/test/..."],
+        )
         self.assertFalse(args.rerun_all)
         self.assertEqual(
             args.benchmark_args,
@@ -59,6 +104,72 @@ class BenchmarkCommandTest(unittest.TestCase):
             expression,
             'attr(tags, "loom-benchmark-module", //kernel/... union //motif/...)',
         )
+
+    def test_resolves_recursive_and_overlapping_target_patterns(self):
+        catalog = [
+            "//kernel/gemm/fused:epilogue_benchmark_module",
+            "//kernel/gemm:matmul_benchmark_module",
+            "//kernel/other:softmax_benchmark_module",
+        ]
+
+        def query(arguments, *, capture_output=False):
+            self.assertTrue(capture_output)
+            self.assertEqual(arguments[0], "query")
+            self.assertEqual(arguments[2], "--output=label")
+            if arguments[1] == "//kernel/gemm/...":
+                return (
+                    "//kernel/gemm/fused:epilogue\n"
+                    "//kernel/gemm/fused:epilogue_benchmark_module\n"
+                    "//kernel/gemm:matmul\n"
+                    "//kernel/gemm:matmul_benchmark_module\n"
+                )
+            if arguments[1] == "//kernel/gemm:matmul":
+                return "//kernel/gemm:matmul\n"
+            self.fail(f"Unexpected Bazel query: {arguments}")
+
+        with mock.patch.object(
+            benchmark_sweep, "discover_targets", return_value=catalog
+        ):
+            targets = benchmark_sweep.resolve_target_patterns(
+                Path("/repo"),
+                ["//kernel/gemm:matmul", "//kernel/gemm/..."],
+                query,
+            )
+
+        self.assertEqual(
+            targets,
+            [
+                "//kernel/gemm/fused:epilogue_benchmark_module",
+                "//kernel/gemm:matmul_benchmark_module",
+            ],
+        )
+
+    def test_reports_target_patterns_without_benchmark_modules(self):
+        with (
+            mock.patch.object(
+                benchmark_sweep,
+                "discover_targets",
+                return_value=["//kernel/gemm:matmul_benchmark_module"],
+            ),
+            self.assertRaisesRegex(
+                benchmark_sweep.Error,
+                "No benchmark modules match Bazel target patterns",
+            ),
+        ):
+            benchmark_sweep.resolve_target_patterns(
+                Path("/repo"),
+                ["//kernel/attention/..."],
+                lambda arguments, capture_output=False: "//kernel/attention:flash\n",
+            )
+
+    def test_rejects_empty_target_pattern(self):
+        with (
+            mock.patch.object(benchmark_sweep, "discover_targets") as discover,
+            self.assertRaisesRegex(benchmark_sweep.Error, "must not be empty"),
+        ):
+            benchmark_sweep.resolve_target_patterns(Path("/repo"), [""], mock.Mock())
+
+        discover.assert_not_called()
 
     def test_resolves_one_materialized_archive_per_target(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -271,6 +382,7 @@ class BenchmarkCommandTest(unittest.TestCase):
                         ("run-5", "2026-08-12T00:04:00Z"),
                         ("run-6", "2026-08-12T00:05:00Z"),
                         ("run-7", "2026-08-12T00:06:00Z"),
+                        ("run-8", "2026-08-12T00:07:00Z"),
                     ],
                 ),
                 mock.patch.object(
@@ -282,6 +394,13 @@ class BenchmarkCommandTest(unittest.TestCase):
                     benchmark_sweep,
                     "resolve_modules",
                     side_effect=resolve_selected_modules,
+                ),
+                mock.patch.object(
+                    benchmark_sweep,
+                    "resolve_target_patterns",
+                    side_effect=lambda unused_root, targets, unused_bazel: sorted(
+                        set(targets)
+                    ),
                 ),
                 mock.patch.object(
                     benchmark_sweep,
@@ -403,6 +522,25 @@ class BenchmarkCommandTest(unittest.TestCase):
                     ],
                 )
 
+                runner.write_bytes(b"changed runner")
+                run.reset_mock()
+                benchmark_sweep.run(
+                    args,
+                    repository_root=repository_root,
+                    bazel=bazel,
+                    run_command=run,
+                )
+                self.assertEqual(run.call_count, 2)
+                runner_manifest = json.loads(
+                    (output_root / "latest.json").read_text(encoding="utf-8")
+                )
+                self.assertTrue(
+                    all(
+                        "runner_changed" in module["reasons"]
+                        for module in runner_manifest["modules"]
+                    )
+                )
+
                 args.rerun_all = True
                 run.reset_mock()
                 benchmark_sweep.run(
@@ -451,7 +589,7 @@ class BenchmarkCommandTest(unittest.TestCase):
         with self.assertRaisesRegex(benchmark_sweep.Error, "owns the --output flag"):
             benchmark_sweep._validate_runner_args(["--output=elsewhere.json"])
 
-    def test_refuses_noncanonical_benchmark_target(self):
+    def test_refuses_noncanonical_resolved_benchmark_target(self):
         with self.assertRaisesRegex(benchmark_sweep.Error, "package-local rule names"):
             benchmark_sweep.validate_targets(["//kernel/example/..."])
 

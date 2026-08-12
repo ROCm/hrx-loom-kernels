@@ -23,6 +23,7 @@ LOOM_BENCHMARK_TARGET = (
     "@iree//loom/src/loom/tools/iree-benchmark-loom:iree-benchmark-loom"
 )
 LOOM_BENCHMARK_TAG = "loom-benchmark-module"
+LOOM_BENCHMARK_TARGET_SUFFIX = "_benchmark_module"
 LOOM_BENCHMARK_ROOTS = ("kernel", "model", "motif")
 SWEEP_SCHEMA = "hrx-loom-kernels.benchmark-sweep.v1"
 _EXECUTION_ENVIRONMENT_PREFIXES = (
@@ -94,10 +95,52 @@ def discover_targets(repository_root: Path, bazel: BazelCommand) -> list[str]:
         ["query", benchmark_query_expression(repository_root), "--output=label"],
         capture_output=True,
     )
-    targets = sorted(line.strip() for line in output.splitlines() if line.strip())
+    targets = sorted(
+        {
+            _normalize_cquery_label(line.strip())
+            for line in output.splitlines()
+            if line.strip()
+        }
+    )
     if not targets:
         raise Error("No benchmark modules are declared in this checkout")
     return targets
+
+
+def resolve_target_patterns(
+    repository_root: Path,
+    patterns: list[str],
+    bazel: BazelCommand,
+) -> list[str]:
+    normalized_patterns = sorted(set(patterns))
+    if any(not pattern for pattern in normalized_patterns):
+        raise Error("Benchmark target patterns must not be empty")
+
+    catalog = discover_targets(repository_root, bazel)
+    if not patterns:
+        return validate_targets(catalog)
+
+    catalog_set = set(catalog)
+    selected_targets: set[str] = set()
+    for pattern in normalized_patterns:
+        output = bazel(["query", pattern, "--output=label"], capture_output=True)
+        expanded_labels = {
+            _normalize_cquery_label(line.strip())
+            for line in output.splitlines()
+            if line.strip()
+        }
+        selected_targets.update(expanded_labels & catalog_set)
+        for label in expanded_labels:
+            candidate = label + LOOM_BENCHMARK_TARGET_SUFFIX
+            if candidate in catalog_set:
+                selected_targets.add(candidate)
+
+    if not selected_targets:
+        raise Error(
+            "No benchmark modules match Bazel target patterns: "
+            + ", ".join(normalized_patterns)
+        )
+    return validate_targets(list(selected_targets))
 
 
 def bundle_relative_path(label: str) -> Path:
@@ -644,11 +687,7 @@ def run(
     output_root = output_root.absolute()
     index = _load_index(output_root)
 
-    targets = (
-        validate_targets(args.targets)
-        if args.targets
-        else discover_targets(repository_root, bazel)
-    )
+    targets = resolve_target_patterns(repository_root, args.targets, bazel)
     bazel_options = [
         "-c",
         "opt",
