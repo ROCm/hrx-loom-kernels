@@ -91,13 +91,14 @@ jobs:
 
       - name: Build AMDGPU execution closure
         run: |
-          mapfile -t execution_targets < <(
-            bazel query "${LOOM_AMDGPU_EXECUTION_QUERY}" --output=label | sort
+          execution_query_output=$(
+            bazel query "${LOOM_AMDGPU_EXECUTION_QUERY}" --output=label
           )
-          if (( ${#execution_targets[@]} == 0 )); then
+          if [[ -z "${execution_query_output}" ]]; then
             echo "No AMDGPU hardware execution targets were declared" >&2
             exit 1
           fi
+          mapfile -t execution_targets < <(sort <<<"${execution_query_output}")
           printf 'Building %s\n' "${execution_targets[@]}"
           bazel build \
             --config=amdgpu \
@@ -215,13 +216,14 @@ jobs:
 
       - name: Execute AMDGPU correctness tests
         run: |
-          mapfile -t execution_targets < <(
-            bazel query "${LOOM_AMDGPU_EXECUTION_QUERY}" --output=label | sort
+          execution_query_output=$(
+            bazel query "${LOOM_AMDGPU_EXECUTION_QUERY}" --output=label
           )
-          if (( ${#execution_targets[@]} == 0 )); then
+          if [[ -z "${execution_query_output}" ]]; then
             echo "No AMDGPU hardware execution targets were declared" >&2
             exit 1
           fi
+          mapfile -t execution_targets < <(sort <<<"${execution_query_output}")
           printf 'Executing %s\n' "${execution_targets[@]}"
           bazel test \
             --config=amdgpu \
