@@ -65,6 +65,63 @@ jq '{
 result also contains the final profiled device distribution and the structured
 compile report for the specialized executable.
 
+### Sweep repository benchmarks
+
+`dev.py benchmark` discovers every kernel and test archive admitted to the
+repository benchmark corpus, builds those archives and the public benchmark
+runner from the selected Loom revision, and maintains a local sweep workspace:
+
+```shell
+SWEEP_ROOT=/tmp/hrx-loom-kernels-gfx1100
+python dev.py benchmark \
+  --config=amdgpu \
+  --device=amdgpu://0 \
+  --output-dir="$SWEEP_ROOT" \
+  -- \
+  --measure=dispatch_complete \
+  --batch-size=64 \
+  --profile-final-batch=true
+```
+
+Repeating the command is incremental. Bazel rebuilds only invalidated actions,
+and the sweep executes only modules whose final `.loombc`, benchmark runner, or
+invocation identity changed. A shared motif edit therefore reruns the archive
+closure that actually changed; an edit that produces byte-identical archives is
+reported as potentially affected without repeating the physical benchmark.
+`--rerun-all` deliberately captures fresh measurements for every selected
+module.
+
+Configured `cquery` edges map every module back to its exact `.loom` source
+closure. `latest.json` records that graph together with changed sources,
+artifact digests, affected/executed/reused state, benchmark names, and native
+result paths:
+
+```shell
+jq '[
+  .modules[] |
+  select(.potentially_affected) |
+  {label, changed_sources, artifact_changed, state}
+]' "$SWEEP_ROOT/latest.json"
+
+jq '[
+  .modules[] |
+  select(.executed) |
+  {label, benchmarks, work_item_count, results}
+]' "$SWEEP_ROOT/latest.json"
+```
+
+Each invocation also writes an immutable manifest under `runs/`. Native
+`iree-benchmark-loom` bundles live below `artifacts/` and retain their public
+`results.json` or `results.jsonl` schema; unchanged modules point back to the
+matching earlier bundle instead of copying or reinterpreting it. The mutable
+`index.json` keeps prior module evidence available across targeted subsets.
+`--target=//kernel/ggml/quantize:q8_1_x4_f32` limits an invocation to one archive,
+and arguments after `--` are passed directly to `iree-benchmark-loom`.
+
+These captures are comparable when they come from the same stable machine,
+software configuration, measurement policy, and exclusive-use discipline.
+The repository correctness matrix intentionally makes no performance claim.
+
 ### Inspect compiler evidence
 
 Cross-compile the archive and retain a detailed report as an optimization
@@ -128,6 +185,7 @@ python dev.py format --check
 python dev.py lint
 python dev.py test
 python dev.py build
+python dev.py benchmark --help
 ```
 
 `python dev.py hook` installs the repository's Lefthook pre-commit hook. The

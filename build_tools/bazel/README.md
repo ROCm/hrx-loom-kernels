@@ -14,6 +14,13 @@ owned by this repository:
   directly to correctness runners with production archives as libraries.
 - Generic compile targets and toolchain declarations are re-exported unchanged.
 
+Each kernel and test library emits a private filegroup carrying the stable
+`loom-benchmark-module` tag. The filegroup forwards only the library's `.loombc`
+archive, allowing repository tooling to discover inputs for
+`iree-benchmark-loom` without depending on Loom's private rule kinds. Generated
+format, plan, compile, and execution tests do not carry benchmark-discovery
+metadata.
+
 [`source_policy.py`](source_policy.py) verifies the filesystem-level portion of
 the contract. Every motif and kernel package has an adjacent `BUILD.bazel`,
 explicitly declares each `.loom` source, loads the repository wrappers, and has
