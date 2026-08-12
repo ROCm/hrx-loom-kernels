@@ -13,6 +13,8 @@ import subprocess
 import sys
 from pathlib import Path, PurePosixPath
 
+from build_tools import benchmark_sweep
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent
 LOCAL_BAZELRC = REPOSITORY_ROOT / ".bazelrc.local"
@@ -113,6 +115,15 @@ def _build(args: argparse.Namespace) -> None:
 def _test(args: argparse.Namespace) -> None:
     _lint_repository()
     _bazel(["test", *_bazel_arguments(args.bazel_args), "//..."])
+
+
+def _benchmark(args: argparse.Namespace) -> None:
+    benchmark_sweep.run(
+        args,
+        repository_root=REPOSITORY_ROOT,
+        bazel=_bazel,
+        run_command=_run,
+    )
 
 
 def _lint(args: argparse.Namespace) -> None:
@@ -313,6 +324,48 @@ def _create_parser() -> argparse.ArgumentParser:
     test_parser.add_argument("bazel_args", nargs=argparse.REMAINDER)
     test_parser.set_defaults(handler=_test)
 
+    benchmark_parser = subparsers.add_parser(
+        "benchmark",
+        help="Run declared benchmark modules into local artifact bundles.",
+    )
+    benchmark_parser.add_argument(
+        "--config",
+        action="append",
+        dest="configs",
+        metavar="NAME",
+        required=True,
+        help="Bazel configuration enabling the selected device (repeatable).",
+    )
+    benchmark_parser.add_argument(
+        "--device",
+        required=True,
+        help="Explicit iree-benchmark-loom device URI.",
+    )
+    benchmark_parser.add_argument(
+        "--output-dir",
+        required=True,
+        help="Persistent workspace receiving immutable sweep evidence.",
+    )
+    benchmark_parser.add_argument(
+        "--rerun-all",
+        action="store_true",
+        help="Execute every selected module even when prior evidence matches.",
+    )
+    benchmark_parser.add_argument(
+        "--target",
+        action="append",
+        default=[],
+        dest="targets",
+        metavar="LABEL",
+        help="Benchmark one repository archive instead of the discovered set.",
+    )
+    benchmark_parser.add_argument(
+        "benchmark_args",
+        nargs=argparse.REMAINDER,
+        help="Arguments after -- are forwarded to iree-benchmark-loom.",
+    )
+    benchmark_parser.set_defaults(handler=_benchmark)
+
     lint_parser = subparsers.add_parser(
         "lint",
         help="Check repository architecture and dependency policy.",
@@ -360,7 +413,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         args.handler(args)
-    except UserError as error:
+    except (UserError, benchmark_sweep.Error) as error:
         parser.error(str(error))
     except subprocess.CalledProcessError as error:
         return error.returncode

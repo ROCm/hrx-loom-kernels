@@ -2,8 +2,8 @@
 
 Build tooling keeps library declarations compact while applying repository-wide
 quality and architecture policy. The root `dev.py` entry point owns setup,
-formatting, linting, testing, and complete builds; this directory owns the
-implementation used by those workflows.
+formatting, linting, testing, complete builds, and local benchmark sweeps; this
+directory owns the implementation used by those workflows.
 
 ## Map
 
