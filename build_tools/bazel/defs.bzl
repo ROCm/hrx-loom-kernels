@@ -17,6 +17,9 @@ loom_compile_target = _loom_compile_target
 loom_execution_profile = _loom_execution_profile
 loom_tools_toolchains = _loom_tools_toolchains
 
+_BENCHMARK_MODULE_TAG = "loom-benchmark-module"
+_BENCHMARK_MODULE_SUFFIX = "_benchmark_module"
+
 def _is_package_or_subpackage(package, root):
     return package == root or package.startswith(root + "/")
 
@@ -80,6 +83,15 @@ def _declare_source_policy_test(name, layer, srcs, tags):
         visibility = ["//visibility:private"],
     )
 
+def _declare_benchmark_module(name, tags, testonly):
+    native.filegroup(
+        name = name + _BENCHMARK_MODULE_SUFFIX,
+        srcs = [":" + name],
+        tags = tags + [_BENCHMARK_MODULE_TAG],
+        testonly = testonly,
+        visibility = ["//visibility:private"],
+    )
+
 def loom_motif_library(
         name,
         srcs = [],
@@ -123,6 +135,7 @@ def loom_kernel_library(
         tags = tags,
         visibility = visibility,
     )
+    _declare_benchmark_module(name, tags, testonly = False)
     _declare_source_policy_test(name, "kernel", srcs, tags)
 
 def loom_test_library(
@@ -151,4 +164,5 @@ def loom_test_library(
         tags = tags,
         visibility = visibility,
     )
+    _declare_benchmark_module(name, tags, testonly = True)
     _declare_source_policy_test(name, "test", srcs, tags)
