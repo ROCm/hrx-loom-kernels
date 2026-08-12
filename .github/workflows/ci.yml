@@ -91,6 +91,7 @@ jobs:
 
       - name: Build AMDGPU execution closure
         run: |
+          mkdir -p "${RUNNER_TEMP}/bazel-profiles"
           execution_query_output=$(
             bazel query "${LOOM_AMDGPU_EXECUTION_QUERY}" --output=label
           )
@@ -112,7 +113,7 @@ jobs:
         with:
           name: bazel-profile-amdgpu-build-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/bazel-profiles/amdgpu-build.profile.gz
-          if-no-files-found: warn
+          if-no-files-found: error
           compression-level: 0
 
   linux_bazel_amdgpu_execute:
@@ -216,6 +217,7 @@ jobs:
 
       - name: Execute AMDGPU correctness tests
         run: |
+          mkdir -p "${RUNNER_TEMP}/bazel-profiles"
           execution_query_output=$(
             bazel query "${LOOM_AMDGPU_EXECUTION_QUERY}" --output=label
           )
@@ -240,5 +242,5 @@ jobs:
         with:
           name: bazel-profile-${{ matrix.target_name }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/bazel-profiles/amdgpu-execute.profile.gz
-          if-no-files-found: warn
+          if-no-files-found: error
           compression-level: 0
