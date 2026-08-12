@@ -1,0 +1,37 @@
+// GGML Q5_K carrier accessors.
+//
+// Reference snapshot: llama.cpp commit
+// e9fa0781f1c25fc4fe8c86be1edc6970661ad6f0.
+//
+//   https://github.com/ggml-org/llama.cpp/blob/e9fa0781f1c25fc4fe8c86be1edc6970661ad6f0/ggml/src/ggml-common.h
+//   https://github.com/ggml-org/llama.cpp/blob/e9fa0781f1c25fc4fe8c86be1edc6970661ad6f0/ggml/src/ggml-quants.c
+//
+// One 176-byte Q5_K block stores 256 unsigned five-bit codes in eight
+// 32-value groups. Its low four-bit carrier matches Q4_K code packing, while
+// a 32-byte high plane contributes one group-selected bit to each code. Q5_K
+// uses the same 12-byte scale/minimum carrier as Q4_K and links its accessor
+// through the Q4_K motif. These functions operate on already-loaded carriers
+// so callers retain control of addressing, memory placement, packet reuse,
+// floating-point materialization, contraction, and launch geometry.
+func.decl @ggml_q4_k_unpack_codes16(%packed_codes: vector<4xi32>, %nibble: index) -> (vector<16xi8>)
+
+// Recovers 16 consecutive unsigned codes from selected low/high carrier
+// packets. `group` selects both the low nibble and the corresponding high bit
+// for one of the eight 32-value groups in a Q5_K block.
+func.def inline @ggml_q5_k_unpack_codes16(%packed_codes: vector<4xi32>, %packed_high: vector<4xi32>, %group: index) -> (vector<16xi8>) {
+  %bounded_group = index.assume %group [range(%group, 0, 7)] : index
+  %c2 = index.constant 2 : index
+  %c4_i32v = vector.constant 4 : vector<4xi32>
+  %one_byte_mask = vector.constant 16843009 : vector<4xi32>
+  %nibble = index.rem %bounded_group, %c2 : index
+  %low_codes = func.call @ggml_q4_k_unpack_codes16(%packed_codes, %nibble) : (vector<4xi32>, index) -> (vector<16xi8>)
+  %low_words = vector.bitcast %low_codes : vector<16xi8> to vector<4xi32>
+  %group_i32 = index.cast %bounded_group : index to i32
+  %high_shift = vector.splat %group_i32 : vector<4xi32>
+  %shifted_high = vector.shrui %packed_high, %high_shift : vector<4xi32>
+  %high_bit = vector.andi %shifted_high, %one_byte_mask : vector<4xi32>
+  %high_codes = vector.shli %high_bit, %c4_i32v : vector<4xi32>
+  %codes_words = vector.ori %low_words, %high_codes : vector<4xi32>
+  %codes = vector.bitcast %codes_words : vector<4xi32> to vector<16xi8>
+  func.return %codes : vector<16xi8>
+}
