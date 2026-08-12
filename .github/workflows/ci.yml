@@ -17,6 +17,10 @@ concurrency:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   linux_bazel:
     name: Linux / Bazel / Source Loom
@@ -107,7 +111,7 @@ jobs:
         with:
           name: bazel-profile-amdgpu-build-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/bazel-profiles/amdgpu-build.profile.gz
-          if-no-files-found: error
+          if-no-files-found: warn
           compression-level: 0
 
   linux_bazel_amdgpu_execute:
