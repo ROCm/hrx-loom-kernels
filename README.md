@@ -6,6 +6,10 @@ It packages reusable motifs, launchable kernels, model and command-program
 components, target qualification profiles, correctness cases, and benchmark
 workloads without coupling them to one runner or deployment architecture.
 
+The [contribution contract](CONTRIBUTING.md) defines the source, documentation,
+correctness, benchmark, target-qualification, and performance-evidence gates
+applied to every admitted library.
+
 Motifs are linkable `func.def` and `func.template` components that express
 reusable representations and algorithms without imposing a launch ABI. Kernels
 are concrete `kernel.def` entry points that compose motifs for a particular

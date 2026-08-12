@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Iterable
 
 
+CONFIG_DECLARATION_PATTERN = re.compile(r"^\s*config\.decl(?:\s|@)", re.MULTILINE)
 KERNEL_DEFINITION_PATTERN = re.compile(r"^\s*kernel\.def(?:\s|@)", re.MULTILINE)
 LOCAL_RULES_LABEL = '"//build_tools/bazel:defs.bzl"'
 UPSTREAM_RULES_LABEL = '"@iree//loom/build_tools/bazel:defs.bzl"'
@@ -32,18 +33,20 @@ def check_sources(layer: str, sources: Iterable[tuple[str, str]]) -> list[str]:
     source_definitions = [
         (
             name,
-            bool(KERNEL_DEFINITION_PATTERN.search(_code_without_line_comments(text))),
+            _code_without_line_comments(text),
         )
         for name, text in sources
     ]
     if layer == "motif":
-        return [
-            f"{name}: motif sources cannot declare kernel.def"
-            for name, has_kernel_definition in source_definitions
-            if has_kernel_definition
-        ]
+        violations = []
+        for name, code in source_definitions:
+            if KERNEL_DEFINITION_PATTERN.search(code):
+                violations.append(f"{name}: motif sources cannot declare kernel.def")
+            if CONFIG_DECLARATION_PATTERN.search(code):
+                violations.append(f"{name}: motif sources cannot declare config.decl")
+        return violations
     if layer == "kernel" and not any(
-        has_kernel_definition for _, has_kernel_definition in source_definitions
+        KERNEL_DEFINITION_PATTERN.search(code) for _, code in source_definitions
     ):
         names = ", ".join(name for name, _ in source_definitions)
         return [f"kernel package has no kernel.def declaration: {names}"]
@@ -88,6 +91,15 @@ def _check_scoped_readmes(repository_root: Path) -> list[str]:
 def check_repository(repository_root: Path) -> list[str]:
     """Returns architecture-policy violations in a kernel-library checkout."""
     violations = _check_scoped_readmes(repository_root)
+    for layer in ("model", "target"):
+        layer_root = repository_root / layer
+        if not layer_root.is_dir():
+            continue
+        for source_path in sorted(layer_root.rglob("*.loom")):
+            violations.append(
+                f"{source_path.relative_to(repository_root)}: source-bearing "
+                f"{layer} packages require a repository admission rule"
+            )
     for layer in ("kernel", "motif"):
         layer_root = repository_root / layer
         if not layer_root.is_dir():

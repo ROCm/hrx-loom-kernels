@@ -19,6 +19,8 @@ loom_tools_toolchains = _loom_tools_toolchains
 
 _BENCHMARK_MODULE_TAG = "loom-benchmark-module"
 _BENCHMARK_MODULE_SUFFIX = "_benchmark_module"
+_MOTIF_ADMISSION_TAG = "loom-admission-motif"
+_MOTIF_ADMISSION_SUFFIX = "_admission_motif"
 
 def _is_package_or_subpackage(package, root):
     return package == root or package.startswith(root + "/")
@@ -43,26 +45,22 @@ def _validate_motif_dependencies(package, deps):
             )
 
 def _validate_kernel_dependencies(package, deps):
-    is_ggml_compatibility = _is_package_or_subpackage(package, "kernel/ggml")
     for dep in deps:
         dep_package = _label_package(dep, package)
         if dep_package == None:
             continue
-        if is_ggml_compatibility and _is_package_or_subpackage(dep_package, "kernel"):
+        if _is_package_or_subpackage(dep_package, "kernel"):
             fail(
                 (
-                    "//%s is a GGML compatibility package and cannot depend on " +
-                    "kernel package %s; compatibility kernels are leaf launch surfaces"
+                    "//%s is a kernel package and cannot depend on kernel package %s; " +
+                    "move reusable code into motif/ and compose launch surfaces above kernel/"
                 ) % (package, dep),
             )
-        if not is_ggml_compatibility and _is_package_or_subpackage(
-            dep_package,
-            "kernel/ggml",
-        ):
+        if not _is_package_or_subpackage(dep_package, "motif"):
             fail(
                 (
-                    "//%s is a native kernel package and cannot depend on GGML " +
-                    "compatibility package %s; depend on its motif/ foundations instead"
+                    "//%s is a kernel package and can depend only on motif/ " +
+                    "libraries, got %s"
                 ) % (package, dep),
             )
 
@@ -92,6 +90,20 @@ def _declare_benchmark_module(name, tags, testonly):
         visibility = ["//visibility:private"],
     )
 
+def _declare_motif_admission(name, tags):
+    native.filegroup(
+        name = name + _MOTIF_ADMISSION_SUFFIX,
+        srcs = [":" + name],
+        tags = tags + [_MOTIF_ADMISSION_TAG],
+        visibility = ["//visibility:private"],
+    )
+
+def _validate_leaf_qualification(name, compile_targets, execution_profiles):
+    if not compile_targets:
+        fail("%s requires at least one compile target" % name)
+    if not execution_profiles:
+        fail("%s requires at least one execution profile" % name)
+
 def loom_motif_library(
         name,
         srcs = [],
@@ -111,6 +123,7 @@ def loom_motif_library(
         visibility = visibility,
     )
     if srcs:
+        _declare_motif_admission(name, tags)
         _declare_source_policy_test(name, "motif", srcs, tags)
 
 def loom_kernel_library(
@@ -126,6 +139,7 @@ def loom_kernel_library(
     if not _is_package_or_subpackage(package, "kernel"):
         fail("loom_kernel_library must be declared below kernel/, got //%s" % package)
     _validate_kernel_dependencies(package, deps)
+    _validate_leaf_qualification(name, compile_targets, execution_profiles)
     _loom_kernel_library(
         name = name,
         srcs = srcs,
@@ -155,6 +169,7 @@ def loom_test_library(
         )
     if _is_package_or_subpackage(package, "motif"):
         _validate_motif_dependencies(package, deps)
+    _validate_leaf_qualification(name, compile_targets, execution_profiles)
     _loom_test_library(
         name = name,
         srcs = srcs,

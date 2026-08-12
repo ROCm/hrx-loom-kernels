@@ -36,6 +36,29 @@ class SourcePolicyTest(unittest.TestCase):
             ["bad.loom: motif sources cannot declare kernel.def"],
         )
 
+    def test_motif_rejects_configuration_declaration(self):
+        violations = source_policy.check_sources(
+            "motif",
+            [
+                (
+                    "bad.loom",
+                    "config.decl @workgroup_size : %value: index\n"
+                    "// config.decl @commented_out\n",
+                )
+            ],
+        )
+        self.assertEqual(
+            violations,
+            ["bad.loom: motif sources cannot declare config.decl"],
+        )
+
+    def test_test_package_accepts_configuration_declaration(self):
+        violations = source_policy.check_sources(
+            "test",
+            [("wrapper.loom", "config.decl @case_size : %value: index\n")],
+        )
+        self.assertEqual(violations, [])
+
     def test_test_package_accepts_private_kernel_definition(self):
         violations = source_policy.check_sources(
             "test",
@@ -191,6 +214,28 @@ class SourcePolicyTest(unittest.TestCase):
                     "motif/format/weird: missing scoped README.md",
                     "motif/format: missing scoped README.md",
                     "motif: missing scoped README.md",
+                ],
+            )
+
+    def test_repository_rejects_source_in_layers_without_admission_rules(self):
+        with TemporaryDirectory() as temporary_directory:
+            repository_root = Path(temporary_directory)
+            for layer in ("model", "target"):
+                source_root = repository_root / layer / "example"
+                source_root.mkdir(parents=True)
+                (repository_root / layer / "README.md").write_text("# Scope\n")
+                (source_root / "README.md").write_text("# Scope\n")
+                (source_root / "program.loom").write_text(
+                    "func.def @program() {\n  func.return\n}\n"
+                )
+
+            self.assertEqual(
+                source_policy.check_repository(repository_root),
+                [
+                    "model/example/program.loom: source-bearing model packages "
+                    "require a repository admission rule",
+                    "target/example/program.loom: source-bearing target packages "
+                    "require a repository admission rule",
                 ],
             )
 

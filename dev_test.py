@@ -171,6 +171,48 @@ class BenchmarkCommandTest(unittest.TestCase):
 
         discover.assert_not_called()
 
+    def test_motif_admission_uses_repository_tags_and_dependency_edges(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repository_root = Path(temporary_directory)
+            for root in ("kernel", "motif"):
+                package_root = repository_root / root / "example"
+                package_root.mkdir(parents=True)
+                (package_root / "BUILD.bazel").write_text("# package\n")
+
+            with mock.patch.object(dev, "REPOSITORY_ROOT", repository_root):
+                expression = dev._motif_admission_query_expression()
+
+        self.assertEqual(
+            expression,
+            'labels(srcs, attr(tags, "loom-admission-motif", //motif/...)) '
+            "except "
+            'deps(attr(tags, "loom-benchmark-module", '
+            "//kernel/... union //motif/...))",
+        )
+
+    def test_motif_admission_accepts_complete_qualification_closure(self):
+        with mock.patch.object(dev, "_bazel", return_value="") as bazel:
+            dev._check_motif_qualification()
+
+        bazel.assert_called_once_with(
+            ["query", dev._motif_admission_query_expression(), "--output=label"],
+            capture_output=True,
+        )
+
+    def test_motif_admission_reports_every_unqualified_library(self):
+        with (
+            mock.patch.object(
+                dev,
+                "_bazel",
+                return_value=("//motif/format/other:q3\n//motif/format/ggml:q5_k\n"),
+            ),
+            self.assertRaisesRegex(
+                dev.UserError,
+                "(?s)//motif/format/ggml:q5_k.*//motif/format/other:q3",
+            ),
+        ):
+            dev._check_motif_qualification()
+
     def test_resolves_one_materialized_archive_per_target(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             repository_root = Path(temporary_directory)
