@@ -18,6 +18,7 @@ from build_tools import benchmark_sweep
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent
 LOCAL_BAZELRC = REPOSITORY_ROOT / ".bazelrc.local"
+LOOM_MOTIF_ADMISSION_TAG = "loom-admission-motif"
 LOOM_FORMAT_TARGET = "@iree//loom/src/loom/tools/loom-format"
 LOOM_SOURCE_ROOTS = ("kernel", "model", "motif", "target")
 SOURCE_POLICY_TOOL = REPOSITORY_ROOT / "build_tools" / "bazel" / "source_policy.py"
@@ -105,6 +106,7 @@ def _lint_repository() -> None:
             f"--repository-root={REPOSITORY_ROOT}",
         ]
     )
+    _check_motif_qualification()
 
 
 def _build(args: argparse.Namespace) -> None:
@@ -116,6 +118,30 @@ def _test(args: argparse.Namespace) -> None:
     _lint_repository()
     targets = args.targets or ["//..."]
     _bazel(["test", *_bazel_arguments(args.bazel_args), *targets])
+
+
+def _motif_admission_query_expression() -> str:
+    benchmark_targets = benchmark_sweep.benchmark_query_expression(REPOSITORY_ROOT)
+    source_motifs = (
+        f'labels(srcs, attr(tags, "{LOOM_MOTIF_ADMISSION_TAG}", //motif/...))'
+    )
+    return f"{source_motifs} except deps({benchmark_targets})"
+
+
+def _check_motif_qualification() -> None:
+    output = _bazel(
+        ["query", _motif_admission_query_expression(), "--output=label"],
+        capture_output=True,
+    )
+    unqualified_motifs = sorted(
+        line.strip() for line in output.splitlines() if line.strip()
+    )
+    if unqualified_motifs:
+        labels = "\n  ".join(unqualified_motifs)
+        raise UserError(
+            "Source-bearing motifs require a benchmarkable kernel or test "
+            f"qualification leaf:\n  {labels}"
+        )
 
 
 def _benchmark(args: argparse.Namespace) -> None:
