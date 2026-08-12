@@ -106,6 +106,7 @@ def loom_kernel_library(
         srcs,
         deps = [],
         compile_targets = [],
+        execution_profiles = [],
         tags = [],
         visibility = None):
     """Declares a launchable kernel package with enforced layer dependencies."""
@@ -118,6 +119,7 @@ def loom_kernel_library(
         srcs = srcs,
         deps = deps,
         compile_targets = compile_targets,
+        execution_profiles = execution_profiles,
         tags = tags,
         visibility = visibility,
     )
