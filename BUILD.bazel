@@ -15,6 +15,7 @@ iree_py_test(
     name = "dev_test",
     srcs = [
         "build_tools/benchmark_sweep.py",
+        "build_tools/compile_report.py",
         "dev.py",
         "dev_test.py",
     ],

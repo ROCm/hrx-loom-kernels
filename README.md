@@ -145,6 +145,87 @@ These captures are comparable when they come from the same stable machine,
 software configuration, measurement policy, and exclusive-use discipline.
 The repository correctness matrix intentionally makes no performance claim.
 
+### Compare repository compiler evidence
+
+Compare every target-qualified compilation in the current working tree with an
+exact Git base:
+
+```shell
+python dev.py compile-report --base=origin/main
+```
+
+The current tree may be dirty. The command does not commit, stash, check out, or
+rewrite it. The base reference is resolved once to an exact commit and exported
+into a persistent archived source workspace below `.notes/compile-reports/`.
+The live tree and archived base keep independent Bazel output bases while
+sharing Bazel's disk action cache, so matching links and target compilations are
+reused safely across both workspaces.
+
+A local Loom checkout selected by `python dev.py setup --loom-source=...` is
+applied to the archived base as well. This isolates library-source changes while
+both sides use the same uncommitted compiler. The comparison records the public
+report tool's implementation identity and fails rather than crossing
+incompatible tool revisions.
+
+Bazel discovers compilation leaves through Loom's public
+`LoomCompilationInfo` provider. Each immutable capture pairs the final target
+artifact with its summary compile report and a public `loom-compile-report show`
+view. Common leaves are compared by digest first; byte-identical pairs require
+no semantic report work. Changed pairs run the public
+`loom-compile-report diff` command and preserve its complete text and JSON views.
+Added, removed, changed, unchanged, and incomparable leaves remain distinct
+outcomes.
+
+A clean comparison is intentionally compact:
+
+```text
+Loom repository compile-report comparison
+  corpus: 4 common, 0 added, 0 removed
+  comparison: 0 changed, 4 unchanged, 0 incomparable
+  semantic diff: 0 changed, 0 unchanged, 4 byte-identical skipped
+```
+
+Target patterns bound the analysis while retaining Bazel dependency semantics:
+
+```shell
+python dev.py compile-report \
+  --base=origin/main \
+  --target=//kernel/ggml/quantize:q8_1_x4_f32
+
+python dev.py compile-report \
+  --base=origin/main \
+  --target=//motif/format/ggml/...
+```
+
+An exact library label selects its target-qualified compilation leaves. A motif
+or package scope also selects downstream compilation leaves that depend on the
+selected sources, so changing a shared motif reports every affected kernel
+without maintaining an inventory. Repeating `--target` forms a union. Repeating
+`--config` applies the same named Bazel configurations to both workspaces.
+
+`latest.json` provides the query surface for the most recent invocation:
+
+```shell
+REPORT_ROOT=.notes/compile-reports
+
+jq '{
+  source: .candidate_capture.source,
+  counts: .comparison.counts
+}' "$REPORT_ROOT/latest.json"
+
+jq '[
+  .comparison.entries[] |
+  select(.state != "unchanged") |
+  {label, state, artifact_changed, report_changed, semantic_state, metrics}
+]' "$REPORT_ROOT/latest.json"
+```
+
+Content-addressed captures live under `captures/`; comparisons and complete
+per-leaf diffs live under `comparisons/`; exact base source trees live under
+`sources/`. Captures and comparisons verify their manifests and materialized
+evidence before reuse. The mutable `latest.json` is only a convenient view over
+those immutable records.
+
 ### Inspect compiler evidence
 
 Cross-compile the archive and retain a detailed report as an optimization
@@ -209,6 +290,7 @@ python dev.py lint
 python dev.py test
 python dev.py build
 python dev.py benchmark --help
+python dev.py compile-report --help
 ```
 
 `dev.py test` accepts the same repeated Bazel target-pattern selection used by

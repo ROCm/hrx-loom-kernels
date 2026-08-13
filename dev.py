@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path, PurePosixPath
 
-from build_tools import benchmark_sweep
+from build_tools import benchmark_sweep, compile_report
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent
@@ -150,6 +150,14 @@ def _benchmark(args: argparse.Namespace) -> None:
         repository_root=REPOSITORY_ROOT,
         bazel=_bazel,
         run_command=_run,
+    )
+
+
+def _compile_report(args: argparse.Namespace) -> None:
+    compile_report.run(
+        args,
+        repository_root=REPOSITORY_ROOT,
+        bazel_executable=_bazel_executable(),
     )
 
 
@@ -409,6 +417,35 @@ def _create_parser() -> argparse.ArgumentParser:
     )
     benchmark_parser.set_defaults(handler=_benchmark)
 
+    compile_report_parser = subparsers.add_parser(
+        "compile-report",
+        help="Capture and compare target-qualified compiler evidence.",
+    )
+    compile_report_parser.add_argument(
+        "--base",
+        metavar="GIT_REF",
+        help="Compare the current working tree with an exact Git base commit.",
+    )
+    compile_report_parser.add_argument(
+        "--config",
+        action="append",
+        default=[],
+        dest="configs",
+        metavar="NAME",
+        help="Bazel configuration selecting compilation profiles (repeatable).",
+    )
+    compile_report_parser.add_argument(
+        "--output-dir",
+        default=".notes/compile-reports",
+        help="Persistent workspace receiving immutable compiler evidence.",
+    )
+    _add_target_pattern_argument(
+        compile_report_parser,
+        "Compilation leaves selected by one Bazel target pattern instead of "
+        "the complete corpus (repeatable).",
+    )
+    compile_report_parser.set_defaults(handler=_compile_report)
+
     lint_parser = subparsers.add_parser(
         "lint",
         help="Check repository architecture and dependency policy.",
@@ -456,7 +493,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         args.handler(args)
-    except (UserError, benchmark_sweep.Error) as error:
+    except (UserError, benchmark_sweep.Error, compile_report.Error) as error:
         parser.error(str(error))
     except subprocess.CalledProcessError as error:
         return error.returncode

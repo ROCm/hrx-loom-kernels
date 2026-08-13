@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import dev
-from build_tools import benchmark_sweep
+from build_tools import benchmark_sweep, compile_report
 
 
 class TestCommandTest(unittest.TestCase):
@@ -639,6 +639,43 @@ class BenchmarkCommandTest(unittest.TestCase):
     def test_refuses_noncanonical_resolved_benchmark_target(self):
         with self.assertRaisesRegex(benchmark_sweep.Error, "package-local rule names"):
             benchmark_sweep.validate_targets(["//kernel/example/..."])
+
+
+class CompileReportCommandTest(unittest.TestCase):
+    def test_parser_defaults_to_repository_evidence_workspace(self):
+        args = dev._create_parser().parse_args(
+            [
+                "compile-report",
+                "--base=origin/main",
+                "--config=amdgpu",
+                "--target=//kernel/gemm/...",
+            ]
+        )
+
+        self.assertEqual(args.base, "origin/main")
+        self.assertEqual(args.configs, ["amdgpu"])
+        self.assertEqual(args.output_dir, ".notes/compile-reports")
+        self.assertEqual(args.targets, ["//kernel/gemm/..."])
+
+    def test_delegates_to_compile_report_orchestration(self):
+        args = SimpleNamespace(
+            base="origin/main",
+            configs=[],
+            output_dir=".notes/compile-reports",
+            targets=[],
+        )
+
+        with (
+            mock.patch.object(dev, "_bazel_executable", return_value="bazelisk"),
+            mock.patch.object(compile_report, "run") as run,
+        ):
+            dev._compile_report(args)
+
+        run.assert_called_once_with(
+            args,
+            repository_root=dev.REPOSITORY_ROOT,
+            bazel_executable="bazelisk",
+        )
 
 
 class LoomFormatCommandTest(unittest.TestCase):
