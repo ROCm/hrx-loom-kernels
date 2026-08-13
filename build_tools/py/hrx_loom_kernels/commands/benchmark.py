@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -18,13 +19,14 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from ..context import RepositoryContext, UserError
+from ..qualification import benchmark_query_expression
+
 
 LOOM_BENCHMARK_TARGET = (
     "@iree//loom/src/loom/tools/iree-benchmark-loom:iree-benchmark-loom"
 )
-LOOM_BENCHMARK_TAG = "loom-benchmark-module"
 LOOM_BENCHMARK_TARGET_SUFFIX = "_benchmark_module"
-LOOM_BENCHMARK_ROOTS = ("experimental", "kernel", "model", "motif")
 SWEEP_SCHEMA = "hrx-loom-kernels.benchmark-sweep.v1"
 _EXECUTION_ENVIRONMENT_PREFIXES = (
     "CUDA_",
@@ -41,7 +43,7 @@ _EXECUTION_ENVIRONMENT_PREFIXES = (
 _EXECUTION_ENVIRONMENT_NAMES = ("DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH")
 
 
-class Error(Exception):
+class Error(UserError):
     """Reports an invalid sweep request or workspace."""
 
 
@@ -76,18 +78,6 @@ def _normalize_cquery_label(label: str) -> str:
 
 def _target_expression(targets: list[str]) -> str:
     return "set(" + " ".join(json.dumps(target) for target in targets) + ")"
-
-
-def benchmark_query_expression(repository_root: Path) -> str:
-    scopes = [
-        f"//{root}/..."
-        for root in LOOM_BENCHMARK_ROOTS
-        if any((repository_root / root).rglob("BUILD.bazel"))
-    ]
-    if not scopes:
-        raise Error("No benchmark library packages exist in this checkout")
-    scope_expression = " union ".join(scopes)
-    return f'attr(tags, "{LOOM_BENCHMARK_TAG}", {scope_expression})'
 
 
 def discover_targets(repository_root: Path, bazel: BazelCommand) -> list[str]:
@@ -902,3 +892,60 @@ def run(
     )
     if failure is not None:
         raise failure
+
+
+def _run_command(args: argparse.Namespace, context: RepositoryContext) -> None:
+    run(
+        args,
+        repository_root=context.repository_root,
+        bazel=context.bazel,
+        run_command=context.run,
+    )
+
+
+def register(subparsers: Any) -> None:
+    parser = subparsers.add_parser(
+        "benchmark",
+        help="Run declared benchmark modules into local artifact bundles.",
+        description=__doc__,
+    )
+    parser.add_argument(
+        "--config",
+        action="append",
+        dest="configs",
+        metavar="NAME",
+        required=True,
+        help="Bazel configuration enabling the selected device (repeatable).",
+    )
+    parser.add_argument(
+        "--device",
+        required=True,
+        help="Explicit iree-benchmark-loom device URI.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        required=True,
+        help="Persistent workspace receiving immutable sweep evidence.",
+    )
+    parser.add_argument(
+        "--rerun-all",
+        action="store_true",
+        help="Execute every selected module even when prior evidence matches.",
+    )
+    parser.add_argument(
+        "--target",
+        action="append",
+        default=[],
+        dest="targets",
+        metavar="PATTERN",
+        help=(
+            "Benchmark modules selected by one Bazel target pattern instead of "
+            "the complete corpus (repeatable)."
+        ),
+    )
+    parser.add_argument(
+        "benchmark_args",
+        nargs=argparse.REMAINDER,
+        help="Arguments after -- are forwarded to iree-benchmark-loom.",
+    )
+    parser.set_defaults(handler=_run_command)

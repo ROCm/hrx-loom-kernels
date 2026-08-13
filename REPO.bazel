@@ -1,0 +1,5 @@
+# Copyright 2026 AMD ROCm™ Software
+# SPDX-License-Identifier: MIT
+
+# Repository-local metadata and generated outputs are never Bazel packages.
+ignore_directories(["**/.*"])

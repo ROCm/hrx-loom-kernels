@@ -57,7 +57,7 @@ At least one compile target proves that the linked program lowers through a real
 
 Correctness admission and performance claims are separate. Shared CI establishes that programs build and execute; its changing machines and load cannot establish a regression threshold. Performance evidence comes from a stable, identified machine with baseline and candidate captured under the same software, target, workload, measurement mode, and exclusive-use discipline.
 
-`python dev.py benchmark` writes immutable, package-shaped artifact bundles using the public benchmark report schema. A focused claim names the benchmark declarations, device, baseline revision, candidate revision, and relevant distribution rather than quoting one best iteration. Compiler changes include the corresponding compile-report comparison so register, LDS, spill, occupancy, and emitted-code changes remain attributable. Roofline proxies and oracle implementations bound the search space; dispatch-count reduction alone is not evidence that a fusion improved end-to-end execution.
+`python dev.py benchmark` writes immutable, package-shaped artifact bundles using the public benchmark report schema. A focused claim names the benchmark declarations, device, baseline revision, candidate revision, and relevant distribution rather than quoting one best iteration. Compiler changes include the corresponding `python dev.py compile-report --base=<revision>` comparison so register, LDS, spill, occupancy, and emitted-code changes remain attributable. Targeting the edited library or motif keeps the comparison bounded while Bazel reverse dependencies include every affected compilation leaf. Roofline proxies and oracle implementations bound the search space; dispatch-count reduction alone is not evidence that a fusion improved end-to-end execution.
 
 ## Local admission sequence
 
@@ -67,6 +67,7 @@ python dev.py format --check
 python dev.py lint
 python dev.py test
 python dev.py build
+python dev.py compile-report --base=origin/main
 ```
 
 `dev.py lint` checks filesystem policy and asks Bazel to prove that every source-bearing motif reaches a benchmarkable kernel or test leaf. `dev.py test` runs generated format, public lint, benchmark-plan, target-compilation, and available execution tests. Hardware tests without a matching local resource skip locally and execute through the repository runner matrix.
