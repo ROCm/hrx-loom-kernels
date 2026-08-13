@@ -25,7 +25,7 @@ class BenchmarkCommandTest(unittest.TestCase):
                 "benchmark",
                 "--config=amdgpu",
                 "--device=amdgpu://0",
-                "--output-dir=.notes/benchmarks/gfx1100",
+                "--output-dir=.reports/benchmark/gfx1100",
                 "--target=//kernel/gemm/...",
                 "--target=//motif/format/ggml/test/...",
                 "--",

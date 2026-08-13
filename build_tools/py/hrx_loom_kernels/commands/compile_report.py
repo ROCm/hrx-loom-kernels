@@ -30,6 +30,8 @@ COMPARISON_SCHEMA = "hrx-loom-kernels.compile-report-comparison.v1"
 SOURCE_SCHEMA = "hrx-loom-kernels.compile-report-source.v1"
 WORKSPACE_SCHEMA = "hrx-loom-kernels.compile-report-workspace.v1"
 LOOM_REPORT_TARGET = "@iree//loom/py/loom/tools:loom-compile-report"
+_REPORTS_DIRECTORY = ".reports"
+_DEFAULT_OUTPUT_DIRECTORY = f"{_REPORTS_DIRECTORY}/compile"
 _LOOM_COMPILATION_PROVIDER_SUFFIX = "%LoomCompilationInfo"
 _COMMIT_PATTERN = re.compile(r"[0-9a-f]{40,64}")
 _PROVIDER_QUERY_EXPRESSION = (
@@ -188,11 +190,12 @@ def initialize_workspace(repository_root: Path, output_root: Path) -> None:
     except ValueError:
         repository_relative = None
     if repository_relative is not None and (
-        not repository_relative.parts or repository_relative.parts[0] != ".notes"
+        not repository_relative.parts
+        or repository_relative.parts[0] != _REPORTS_DIRECTORY
     ):
         raise Error(
             "A compile-report workspace inside the repository must be below "
-            f".notes/: {output_root}"
+            f"{_REPORTS_DIRECTORY}/: {output_root}"
         )
 
     if output_root.exists() and not output_root.is_dir():
@@ -1565,8 +1568,11 @@ def register(subparsers: Any) -> None:
     )
     parser.add_argument(
         "--output-dir",
-        default=".notes/compile-reports",
-        help="Persistent workspace receiving immutable compiler evidence.",
+        default=_DEFAULT_OUTPUT_DIRECTORY,
+        help=(
+            "Persistent workspace receiving immutable compiler evidence "
+            f"(default: {_DEFAULT_OUTPUT_DIRECTORY})."
+        ),
     )
     parser.add_argument(
         "--target",

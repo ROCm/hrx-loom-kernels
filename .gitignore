@@ -1,4 +1,5 @@
 /.notes/
+/.reports/
 /.bazelrc.local
 /.ruff_cache/
 /bazel-*

@@ -80,7 +80,7 @@ class BaseSourceTest(GitRepositoryTestCase):
         self._write("BUILD.bazel", "# base\n")
         self._write(".bazelrc.local", "common --override_module=iree=/loom\n")
         commit = self._commit_all()
-        output_root = self.repository_root / ".notes" / "compile-reports"
+        output_root = self.repository_root / ".reports" / "compile"
         compile_report.initialize_workspace(self.repository_root, output_root)
 
         source_root, identity = compile_report.materialize_base_source(
@@ -294,7 +294,7 @@ class CaptureTest(unittest.TestCase):
         temporary_root = Path(self.temporary_directory.name)
         self.repository_root = temporary_root / "repository"
         self.repository_root.mkdir()
-        self.output_root = self.repository_root / ".notes" / "compile-reports"
+        self.output_root = self.repository_root / ".reports" / "compile"
         compile_report.initialize_workspace(self.repository_root, self.output_root)
         self.execution_root = temporary_root / "execution-root"
         self.artifact_path = self.execution_root / "bazel-out/bin/kernel/example.hsaco"
@@ -456,10 +456,19 @@ class CaptureTest(unittest.TestCase):
 
 
 class WorkspaceTest(unittest.TestCase):
-    def test_rejects_unignored_workspace_inside_repository(self):
+    def test_accepts_reserved_report_workspace_inside_repository(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             repository_root = Path(temporary_directory)
-            with self.assertRaisesRegex(compile_report.Error, "below .notes"):
+            output_root = repository_root / ".reports" / "compile"
+
+            compile_report.initialize_workspace(repository_root, output_root)
+
+            self.assertTrue((output_root / "workspace.json").is_file())
+
+    def test_rejects_unreserved_workspace_inside_repository(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repository_root = Path(temporary_directory)
+            with self.assertRaisesRegex(compile_report.Error, "below .reports"):
                 compile_report.initialize_workspace(
                     repository_root,
                     repository_root / "compile-reports",
@@ -469,7 +478,7 @@ class WorkspaceTest(unittest.TestCase):
         args = SimpleNamespace(
             base="",
             configs=[],
-            output_dir=".notes/compile-reports",
+            output_dir=".reports/compile",
             targets=[],
         )
         with (
@@ -739,14 +748,14 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(args.base, "origin/main")
         self.assertEqual(args.configs, ["amdgpu"])
-        self.assertEqual(args.output_dir, ".notes/compile-reports")
+        self.assertEqual(args.output_dir, ".reports/compile")
         self.assertEqual(args.targets, ["//kernel/gemm/..."])
 
     def test_delegates_to_compile_report_orchestration(self):
         args = SimpleNamespace(
             base="origin/main",
             configs=[],
-            output_dir=".notes/compile-reports",
+            output_dir=".reports/compile",
             targets=[],
         )
         context = mock.Mock(spec=RepositoryContext)

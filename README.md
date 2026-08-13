@@ -69,6 +69,12 @@ jq '{
 result also contains the final profiled device distribution and the structured
 compile report for the specialized executable.
 
+Repository-scale generated evidence lives below `.reports/`. Git and Bazel both
+exclude this local output root, and each report producer owns a child namespace
+so its schemas and lifecycle remain independent. Benchmark sweep workspaces use
+`.reports/benchmark/<profile>/`; compiler comparison workspaces default to
+`.reports/compile/`.
+
 ### Sweep repository benchmarks
 
 `dev.py benchmark` discovers every kernel and test archive admitted to the
@@ -76,7 +82,7 @@ repository benchmark corpus, builds those archives and the public benchmark
 runner from the selected Loom revision, and maintains a local sweep workspace:
 
 ```shell
-SWEEP_ROOT=/tmp/hrx-loom-kernels-gfx1100
+SWEEP_ROOT=.reports/benchmark/gfx1100
 python dev.py benchmark \
   --config=amdgpu \
   --device=amdgpu://0 \
@@ -156,7 +162,7 @@ python dev.py compile-report --base=origin/main
 
 The current tree may be dirty. The command does not commit, stash, check out, or
 rewrite it. The base reference is resolved once to an exact commit and exported
-into a persistent archived source workspace below `.notes/compile-reports/`.
+into a persistent archived source workspace below `.reports/compile/`.
 The live tree and archived base keep independent Bazel output bases while
 sharing Bazel's disk action cache, so matching links and target compilations are
 reused safely across both workspaces.
@@ -206,7 +212,7 @@ without maintaining an inventory. Repeating `--target` forms a union. Repeating
 `latest.json` provides the query surface for the most recent invocation:
 
 ```shell
-REPORT_ROOT=.notes/compile-reports
+REPORT_ROOT=.reports/compile
 
 jq '{
   source: .candidate_capture.source,
