@@ -4,6 +4,7 @@
 // geometry, and logical-tail publication. Those choices exercise the public
 // carrier functions through realistic consumers without adding a production
 // launch ABI to the motif archive.
+
 func.decl @ggml_q4_k_unpack_scale_minimum(%packed_scales: vector<3xi32>, %group: index) -> (i32, i32)
 
 func.decl @ggml_q5_k_unpack_codes16(%packed_codes: vector<4xi32>, %packed_high: vector<4xi32>, %group: index) -> (vector<16xi8>)

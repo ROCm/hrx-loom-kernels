@@ -13,6 +13,7 @@
 // through the Q4_K motif. These functions operate on already-loaded carriers
 // so callers retain control of addressing, memory placement, packet reuse,
 // floating-point materialization, contraction, and launch geometry.
+
 func.decl @ggml_q4_k_unpack_codes16(%packed_codes: vector<4xi32>, %nibble: index) -> (vector<16xi8>)
 
 // Recovers 16 consecutive unsigned codes from selected low/high carrier
