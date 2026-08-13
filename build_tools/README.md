@@ -10,6 +10,7 @@ directory owns the implementation used by those workflows.
 | Path | Contents |
 | --- | --- |
 | [`bazel/`](bazel/) | Standard-library rule wrappers and source/repository policy checks. |
+| [`ci/`](ci/) | Candidate-tree admission checks owned by hosted CI. |
 
 The Loom compiler and generic library rules remain in HRX. Tooling here exists
 only for contracts specific to this standard-library repository, so external

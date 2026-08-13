@@ -24,7 +24,7 @@ LOOM_BENCHMARK_TARGET = (
 )
 LOOM_BENCHMARK_TAG = "loom-benchmark-module"
 LOOM_BENCHMARK_TARGET_SUFFIX = "_benchmark_module"
-LOOM_BENCHMARK_ROOTS = ("kernel", "model", "motif")
+LOOM_BENCHMARK_ROOTS = ("experimental", "kernel", "model", "motif")
 SWEEP_SCHEMA = "hrx-loom-kernels.benchmark-sweep.v1"
 _EXECUTION_ENVIRONMENT_PREFIXES = (
     "CUDA_",

@@ -1,0 +1,12 @@
+load("@iree//build_tools/bazel:python.bzl", "iree_py_test")
+
+package(default_visibility = ["//visibility:private"])
+
+iree_py_test(
+    name = "check_release_tree_test",
+    srcs = [
+        "check_release_tree.py",
+        "check_release_tree_test.py",
+    ],
+    main = "check_release_tree_test.py",
+)
