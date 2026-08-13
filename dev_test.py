@@ -85,7 +85,7 @@ class BenchmarkCommandTest(unittest.TestCase):
             ["--", "--measure=dispatch_complete"],
         )
 
-    def test_discovery_queries_only_populated_library_roots(self):
+    def test_discovery_queries_only_populated_authoring_roots(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             repository_root = Path(temporary_directory)
             (repository_root / "kernel" / "example").mkdir(parents=True)
@@ -96,13 +96,18 @@ class BenchmarkCommandTest(unittest.TestCase):
             (repository_root / "motif" / "test" / "BUILD.bazel").write_text(
                 "# motif\n", encoding="utf-8"
             )
+            (repository_root / "experimental" / "model").mkdir(parents=True)
+            (repository_root / "experimental" / "model" / "BUILD.bazel").write_text(
+                "# experiment\n", encoding="utf-8"
+            )
             (repository_root / "model").mkdir()
 
             expression = benchmark_sweep.benchmark_query_expression(repository_root)
 
         self.assertEqual(
             expression,
-            'attr(tags, "loom-benchmark-module", //kernel/... union //motif/...)',
+            'attr(tags, "loom-benchmark-module", '
+            "//experimental/... union //kernel/... union //motif/...)",
         )
 
     def test_resolves_recursive_and_overlapping_target_patterns(self):
@@ -637,6 +642,24 @@ class BenchmarkCommandTest(unittest.TestCase):
 
 
 class LoomFormatCommandTest(unittest.TestCase):
+    def test_default_discovery_includes_experimental_sources(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repository_root = Path(temporary_directory)
+            experimental_source = repository_root / "experimental/model/program.loom"
+            kernel_source = repository_root / "kernel/example/kernel.loom"
+            ignored_source = repository_root / "scratch/ignored.loom"
+            for source in (experimental_source, kernel_source, ignored_source):
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text("module {\n}\n", encoding="utf-8")
+
+            with mock.patch.object(dev, "REPOSITORY_ROOT", repository_root):
+                sources = dev._loom_sources([])
+
+        self.assertEqual(
+            sources,
+            sorted([experimental_source.resolve(), kernel_source.resolve()]),
+        )
+
     def test_runs_one_batch_formatter_command(self):
         sources = [Path("/repo/motif/a.loom"), Path("/repo/motif/b.loom")]
 
@@ -726,11 +749,18 @@ class StagedLoomFormatTest(unittest.TestCase):
         deleted_source.unlink()
         readme.write_text("modified\n", encoding="utf-8")
         new_source = self._write("kernel/new.loom", "new\n")
+        experimental_source = self._write("experimental/model/new.loom", "experiment\n")
         self._git("add", "--all")
 
         self.assertEqual(
             dev._staged_loom_sources(),
-            sorted([kept_source.resolve(), new_source.resolve()]),
+            sorted(
+                [
+                    experimental_source.resolve(),
+                    kept_source.resolve(),
+                    new_source.resolve(),
+                ]
+            ),
         )
 
     def test_fix_refuses_partially_staged_source_without_mutation(self):

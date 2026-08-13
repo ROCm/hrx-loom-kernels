@@ -138,6 +138,26 @@ class SourcePolicyTest(unittest.TestCase):
             )
             self.assertEqual(source_policy.check_repository(repository_root), [])
 
+    def test_repository_leaves_experimental_sources_to_public_rules(self):
+        with TemporaryDirectory() as temporary_directory:
+            repository_root = Path(temporary_directory)
+            experimental_root = repository_root / "experimental" / "model"
+            experimental_root.mkdir(parents=True)
+            (experimental_root / "program.loom").write_text(
+                "config.decl @layer_count : %value: index\n"
+                "kernel.def @experimental() {\n"
+                "} launch() {\n"
+                "  kernel.return\n"
+                "}\n"
+            )
+            (experimental_root / "BUILD.bazel").write_text(
+                'load("@iree//loom/build_tools/bazel:defs.bzl", '
+                '"loom_library")\n'
+                'loom_library(name = "program", srcs = ["program.loom"])\n'
+            )
+
+            self.assertEqual(source_policy.check_repository(repository_root), [])
+
     def test_repository_test_package_requires_test_library_rule(self):
         with TemporaryDirectory() as temporary_directory:
             repository_root = Path(temporary_directory)

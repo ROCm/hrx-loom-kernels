@@ -49,6 +49,8 @@ def _validate_kernel_dependencies(package, deps):
         dep_package = _label_package(dep, package)
         if dep_package == None:
             continue
+        if _is_package_or_subpackage(dep_package, "experimental"):
+            continue
         if _is_package_or_subpackage(dep_package, "kernel"):
             fail(
                 (

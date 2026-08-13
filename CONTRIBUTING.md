@@ -14,6 +14,25 @@ This repository admits reusable compiler inputs, not a catalog of model ports. A
 
 Source-bearing `model/` and `target/` packages currently fail repository policy. That failure is intentional: raw `.loom` files cannot bypass the same build and evidence contract applied to motifs and kernels. A new source surface begins with its repository rule and production lifecycle.
 
+## Branch-local incubation
+
+Long-running ports and kernel searches may live below `experimental/` on
+feature branches. Experimental packages use the public Loom and Bazel rules;
+normal `//...` builds, tests, target-profile execution queries, formatting, and
+benchmark discovery traverse them. This gives incubation work the same compiler
+and hardware evidence as admitted code without turning it into a weaker
+standard-library layer.
+
+Pull requests and pushes targeting the repository release line fail while the
+candidate tree tracks any `experimental/**` path. The gate reads the candidate
+tree rather than branch history, so a branch may carry experiments for as long
+as needed, extract reusable work into `motif/`, `kernel/`, `model/`, or
+`target/`, and remove the incubation payload before promotion. Feature branches
+may compose experimental targets with sources at any repository path; those
+paths are working locations until the candidate tree passes release admission.
+Promotion moves the reusable sources into their durable layer, and the ordinary
+complete build proves that no required experimental package was left behind.
+
 ## Source contract
 
 Each `.loom` file stands on its own as an implementation artifact. Its leading documentation establishes the represented format or operation, public symbol contract, parameter and shape meaning, storage layout, ABI ownership, and any specification or oracle used to establish behavior. Package READMEs carry information that cannot be recovered from `ls`: scope boundaries, external specifications, ABI relationships, implementation status, and the intended composition layer. Per-symbol inventories remain beside the source so they cannot drift from it.

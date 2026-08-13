@@ -20,7 +20,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent
 LOCAL_BAZELRC = REPOSITORY_ROOT / ".bazelrc.local"
 LOOM_MOTIF_ADMISSION_TAG = "loom-admission-motif"
 LOOM_FORMAT_TARGET = "@iree//loom/src/loom/tools/loom-format"
-LOOM_SOURCE_ROOTS = ("kernel", "model", "motif", "target")
+LOOM_SOURCE_ROOTS = ("experimental", "kernel", "model", "motif", "target")
 SOURCE_POLICY_TOOL = REPOSITORY_ROOT / "build_tools" / "bazel" / "source_policy.py"
 
 
@@ -181,9 +181,10 @@ def _normalize_loom_source(argument: str | Path) -> Path:
     except ValueError as error:
         raise UserError(f"Loom source is outside the repository: {source}") from error
     if not _is_loom_source_path(relative_source):
+        source_roots = ", ".join(f"{root}/" for root in LOOM_SOURCE_ROOTS)
         raise UserError(
-            "Loom sources must be .loom files below kernel/, model/, motif/, "
-            f"or target/: {relative_source}"
+            "Loom sources must be .loom files below one of: "
+            f"{source_roots}; got {relative_source}"
         )
     if not source.is_file():
         raise UserError(f"Loom source does not exist: {source}")

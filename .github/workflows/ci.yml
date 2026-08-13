@@ -22,6 +22,27 @@ defaults:
     shell: bash
 
 jobs:
+  release_tree:
+    name: Release / No Experimental Sources
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.base.ref == github.event.repository.default_branch) ||
+      (github.event_name == 'push' &&
+       github.ref_name == github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Check release candidate tree
+        run: python -B build_tools/ci/check_release_tree.py
+
   linux_bazel:
     name: Linux / Bazel / Source Loom
     runs-on: ubuntu-24.04
