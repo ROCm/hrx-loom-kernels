@@ -1,0 +1,64 @@
+load(
+    "@iree//build_tools/bazel:python.bzl",
+    "iree_py_library",
+    "iree_py_test",
+)
+
+package(default_visibility = ["//visibility:private"])
+
+iree_py_library(
+    name = "dev_tools",
+    srcs = glob(
+        ["hrx_loom_kernels/**/*.py"],
+        exclude = ["hrx_loom_kernels/**/*_test.py"],
+    ),
+)
+
+iree_py_test(
+    name = "benchmark_test",
+    srcs = ["hrx_loom_kernels/commands/benchmark_test.py"],
+    main = "hrx_loom_kernels/commands/benchmark_test.py",
+    deps = [":dev_tools"],
+)
+
+iree_py_test(
+    name = "cli_test",
+    srcs = ["hrx_loom_kernels/cli_test.py"],
+    main = "hrx_loom_kernels/cli_test.py",
+    deps = [":dev_tools"],
+)
+
+iree_py_test(
+    name = "compile_report_test",
+    srcs = ["hrx_loom_kernels/commands/compile_report_test.py"],
+    main = "hrx_loom_kernels/commands/compile_report_test.py",
+    deps = [":dev_tools"],
+)
+
+iree_py_test(
+    name = "context_test",
+    srcs = ["hrx_loom_kernels/context_test.py"],
+    main = "hrx_loom_kernels/context_test.py",
+    deps = [":dev_tools"],
+)
+
+iree_py_test(
+    name = "format_test",
+    srcs = ["hrx_loom_kernels/commands/format_test.py"],
+    main = "hrx_loom_kernels/commands/format_test.py",
+    deps = [":dev_tools"],
+)
+
+iree_py_test(
+    name = "qualification_test",
+    srcs = ["hrx_loom_kernels/qualification_test.py"],
+    main = "hrx_loom_kernels/qualification_test.py",
+    deps = [":dev_tools"],
+)
+
+iree_py_test(
+    name = "test_test",
+    srcs = ["hrx_loom_kernels/commands/test_test.py"],
+    main = "hrx_loom_kernels/commands/test_test.py",
+    deps = [":dev_tools"],
+)

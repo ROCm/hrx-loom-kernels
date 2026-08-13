@@ -5,21 +5,24 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
 import re
-import shlex
 import shutil
 import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
+
+from ..context import RepositoryContext, UserError, format_command
 
 
 CAPTURE_SCHEMA = "hrx-loom-kernels.compile-report-capture.v1"
@@ -41,7 +44,7 @@ _PROVIDER_QUERY_EXPRESSION = (
 )
 
 
-class Error(Exception):
+class Error(UserError):
     """Reports an invalid capture request or evidence workspace."""
 
 
@@ -71,7 +74,7 @@ def _run_process(
     capture_output: bool = False,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
-    print("+ " + shlex.join(command), flush=True)
+    print("+ " + format_command(command), flush=True)
     result = subprocess.run(
         command,
         capture_output=capture_output,
@@ -484,7 +487,8 @@ def resolve_report_tool(
     ]
     if len(execution_root_lines) != 1:
         raise Error("Bazel did not report exactly one execution root")
-    path = Path(execution_root_lines[0]).joinpath(*relative_executable.parts)
+    execution_root = Path(execution_root_lines[0])
+    path = execution_root.joinpath(*relative_executable.parts)
     if not path.is_file():
         raise Error(f"Bazel did not materialize loom-compile-report: {path}")
     executable_parts = relative_executable.parts
@@ -497,7 +501,6 @@ def resolve_report_tool(
             f"Loom repository: {relative_executable}"
         ) from error
     implementation_files = []
-    runfiles_root = Path(str(path) + ".runfiles") / runfiles_workspace
     for runfile_path in runfile_paths:
         runfile_parts = runfile_path.parts
         if (
@@ -507,7 +510,7 @@ def resolve_report_tool(
         ):
             continue
         relative_path = PurePosixPath(*runfile_parts[2:])
-        implementation_path = runfiles_root.joinpath(*relative_path.parts)
+        implementation_path = execution_root.joinpath(*runfile_path.parts)
         if not implementation_path.is_file():
             raise Error(
                 "Bazel did not materialize a Loom report-tool runfile: "
@@ -725,15 +728,10 @@ def materialize_base_source(
             ],
             cwd=repository_root,
         )
-        _run_process(
-            [
-                "tar",
-                "--extract",
-                f"--file={archive_path}",
-                f"--directory={temporary_root}",
-            ],
-            cwd=repository_root,
-        )
+        with tarfile.open(archive_path, "r:") as archive:
+            # The archive was produced locally from the already selected Git
+            # commit. Preserve Git's exact file modes and link representation.
+            archive.extractall(temporary_root, filter="fully_trusted")
         if local_bazelrc.is_file():
             shutil.copyfile(local_bazelrc, temporary_root / ".bazelrc.local")
         tree_identity = _source_tree_identity(temporary_root)
@@ -1536,3 +1534,49 @@ def run(
             flush=True,
         )
     _write_latest(output_root, args.base, candidate_capture, comparison)
+
+
+def _run_command(args: argparse.Namespace, context: RepositoryContext) -> None:
+    run(
+        args,
+        repository_root=context.repository_root,
+        bazel_executable=context.bazel_executable(),
+    )
+
+
+def register(subparsers: Any) -> None:
+    parser = subparsers.add_parser(
+        "compile-report",
+        help="Capture and compare target-qualified compiler evidence.",
+        description=__doc__,
+    )
+    parser.add_argument(
+        "--base",
+        metavar="GIT_REF",
+        help="Compare the current working tree with an exact Git base commit.",
+    )
+    parser.add_argument(
+        "--config",
+        action="append",
+        default=[],
+        dest="configs",
+        metavar="NAME",
+        help="Bazel configuration selecting compilation profiles (repeatable).",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=".notes/compile-reports",
+        help="Persistent workspace receiving immutable compiler evidence.",
+    )
+    parser.add_argument(
+        "--target",
+        action="append",
+        default=[],
+        dest="targets",
+        metavar="PATTERN",
+        help=(
+            "Compilation leaves selected by one Bazel target pattern instead of "
+            "the complete corpus (repeatable)."
+        ),
+    )
+    parser.set_defaults(handler=_run_command)

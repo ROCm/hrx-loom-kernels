@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -11,7 +13,8 @@ from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from unittest import mock
 
-from build_tools import compile_report
+from build_tools.py.hrx_loom_kernels.commands import compile_report
+from build_tools.py.hrx_loom_kernels.context import RepositoryContext
 
 
 class GitRepositoryTestCase(unittest.TestCase):
@@ -85,7 +88,8 @@ class BaseSourceTest(GitRepositoryTestCase):
             output_root,
             "HEAD",
         )
-        (source_root / "bazel-bin").symlink_to("/tmp/bazel-output")
+        if os.name != "nt":
+            (source_root / "bazel-bin").symlink_to(source_root / "bazel-output")
         reused_root, reused_identity = compile_report.materialize_base_source(
             self.repository_root,
             output_root,
@@ -222,8 +226,8 @@ class ReportToolTest(unittest.TestCase):
                 "bazel-out/bin/external/iree+/loom/tools/loom-compile-report"
             )
             executable = execution_root.joinpath(*relative_executable.parts)
-            implementation = Path(
-                str(executable) + ".runfiles/iree+/loom/reporting/report.py"
+            implementation = execution_root.joinpath(
+                "external", "iree+", "loom", "reporting", "report.py"
             )
             executable.parent.mkdir(parents=True)
             implementation.parent.mkdir(parents=True)
@@ -716,6 +720,47 @@ class ComparisonTest(unittest.TestCase):
             compile_report.compare_captures(
                 self.output_root, base, candidate, self.report_tool
             )
+
+
+class CommandTest(unittest.TestCase):
+    def test_parser_defaults_to_repository_evidence_workspace(self):
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers(dest="command", required=True)
+        compile_report.register(subparsers)
+
+        args = parser.parse_args(
+            [
+                "compile-report",
+                "--base=origin/main",
+                "--config=amdgpu",
+                "--target=//kernel/gemm/...",
+            ]
+        )
+
+        self.assertEqual(args.base, "origin/main")
+        self.assertEqual(args.configs, ["amdgpu"])
+        self.assertEqual(args.output_dir, ".notes/compile-reports")
+        self.assertEqual(args.targets, ["//kernel/gemm/..."])
+
+    def test_delegates_to_compile_report_orchestration(self):
+        args = SimpleNamespace(
+            base="origin/main",
+            configs=[],
+            output_dir=".notes/compile-reports",
+            targets=[],
+        )
+        context = mock.Mock(spec=RepositoryContext)
+        context.repository_root = Path("/repository")
+        context.bazel_executable.return_value = "bazelisk"
+
+        with mock.patch.object(compile_report, "run") as run:
+            compile_report._run_command(args, context)
+
+        run.assert_called_once_with(
+            args,
+            repository_root=Path("/repository"),
+            bazel_executable="bazelisk",
+        )
 
 
 if __name__ == "__main__":
