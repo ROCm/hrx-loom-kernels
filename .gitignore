@@ -1,0 +1,4 @@
+/.notes/
+/.bazelrc.local
+/.ruff_cache/
+/bazel-*

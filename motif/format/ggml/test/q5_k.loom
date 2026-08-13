@@ -1,0 +1,237 @@
+// Private execution witnesses for the GGML Q5_K carrier motifs.
+//
+// The wrapper kernels deliberately own full-record addressing, launch
+// geometry, and logical-tail publication. Those choices exercise the public
+// carrier functions through realistic consumers without adding a production
+// launch ABI to the motif archive.
+
+func.decl @ggml_q4_k_unpack_scale_minimum(%packed_scales: vector<3xi32>, %group: index) -> (i32, i32)
+
+func.decl @ggml_q5_k_unpack_codes16(%packed_codes: vector<4xi32>, %packed_high: vector<4xi32>, %group: index) -> (vector<16xi8>)
+
+// Exposes every group selector over one pair of already-loaded packets.
+kernel.def @test_ggml_q5_k_unpack_selector_table() {
+  %c1 = index.constant 1 : index
+  %c8 = index.constant 8 : index
+  kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%c8, %c1, %c1) : index
+} launch(%code_input: buffer, %high_input: buffer, %output: buffer) {
+  %group = kernel.workitem.id<x> : index
+  %c0 = index.constant 0 : index
+  %c16 = index.constant 16 : index
+  %base = index.constant 0 : offset
+  %code_view = buffer.view %code_input[%base] : buffer -> view<4xi32>
+  %high_view = buffer.view %high_input[%base] : buffer -> view<4xi32>
+  %output_view = buffer.view %output[%base] : buffer -> view<128xi8>
+  %packed_codes = vector.load %code_view[%c0] : view<4xi32> -> vector<4xi32>
+  %packed_high = vector.load %high_view[%c0] : view<4xi32> -> vector<4xi32>
+  %codes = func.call @ggml_q5_k_unpack_codes16(%packed_codes, %packed_high, %group) : (vector<4xi32>, vector<4xi32>, index) -> (vector<16xi8>)
+  %output_base = index.mul %group, %c16 : index
+  vector.store %codes, %output_view[%output_base] : vector<16xi8>, view<128xi8>
+  kernel.return
+}
+
+// Decodes complete blocks and logical tails. One workitem owns one 16-value
+// half-group and loads only the low/high packets required by that output.
+kernel.def @test_ggml_q5_k_unpack_codes(%element_count: index) {
+  %c1 = index.constant 1 : index
+  %c16 = index.constant 16 : index
+  %c255 = index.constant 255 : index
+  %c256 = index.constant 256 : index
+  %padded_count = index.add %element_count, %c255 : index
+  %block_count = index.div %padded_count, %c256 : index
+  kernel.launch.config workgroups(%block_count, %c1, %c1) workgroup_size(%c16, %c1, %c1) : index
+} launch(%element_count: index, %input: buffer, %output: buffer) {
+  %bounded_count = index.assume %element_count [range(%element_count, 1, 65536)] : index
+  %block = kernel.workgroup.id<x> : index
+  %chunk = kernel.workitem.id<x> : index
+  %c0 = index.constant 0 : index
+  %c1 = index.constant 1 : index
+  %c2 = index.constant 2 : index
+  %c4 = index.constant 4 : index
+  %c8 = index.constant 8 : index
+  %c12 = index.constant 12 : index
+  %c16 = index.constant 16 : index
+  %c255 = index.constant 255 : index
+  %c256 = index.constant 256 : index
+  %base = index.constant 0 : offset
+  %group = index.div %chunk, %c2 : index
+  %half = index.rem %chunk, %c2 : index
+  %group_pair = index.div %group, %c2 : index
+  %group_word_add = index.mul %group_pair, %c8 : index
+  %half_word_add = index.mul %half, %c4 : index
+  %code_word0 = index.add %c12, %group_word_add : index
+  %code_word_index = index.add %code_word0, %half_word_add : index
+  %high_word_index = index.add %c4, %half_word_add : index
+  %input_block_count0 = index.add %bounded_count, %c255 : index
+  %input_block_count = index.div %input_block_count0, %c256 : index
+  %bounded_input_block_count = index.assume %input_block_count [range(%input_block_count, 1, 256)] : index
+  %block_in_bounds = index.cmp ult, %block, %bounded_input_block_count : index
+  scf.if %block_in_bounds {
+    %bounded_block = index.assume %block [range(%block, 0, 255), lt(%block, %bounded_input_block_count)] : index
+    %input_view = buffer.view %input[%base] : buffer -> view<[%bounded_input_block_count]x44xi32>
+    %output_view = buffer.view %output[%base] : buffer -> view<[%bounded_count]xi8>
+    %packed_codes = vector.load %input_view[%bounded_block, %code_word_index] : view<[%bounded_input_block_count]x44xi32> -> vector<4xi32>
+    %packed_high = vector.load %input_view[%bounded_block, %high_word_index] : view<[%bounded_input_block_count]x44xi32> -> vector<4xi32>
+    %codes = func.call @ggml_q5_k_unpack_codes16(%packed_codes, %packed_high, %group) : (vector<4xi32>, vector<4xi32>, index) -> (vector<16xi8>)
+    %block_output_base = index.mul %bounded_block, %c256 : index
+    %chunk_output_add = index.mul %chunk, %c16 : index
+    %output_base = index.add %block_output_base, %chunk_output_add : index
+    %output_end = index.add %output_base, %c16 : index
+    %is_full_chunk = index.cmp ule, %output_end, %bounded_count : index
+    scf.if %is_full_chunk {
+      vector.store %codes, %output_view[%output_base] : vector<16xi8>, view<[%bounded_count]xi8>
+    } else {
+      scf.for %element = [%c0 to %c16 step %c1] unroll {
+        %output_index = index.add %output_base, %element : index
+        %is_valid = index.cmp ult, %output_index, %bounded_count : index
+        scf.if %is_valid {
+          %value = vector.extract %codes[%element] : vector<16xi8> -> i8
+          view.store %value, %output_view[%output_index] : i8, view<[%bounded_count]xi8>
+        }
+      }
+    }
+  }
+  kernel.return
+}
+
+// Exposes every scale/minimum pair from complete 176-byte records through the
+// metadata accessor shared with Q4_K.
+kernel.def @test_ggml_q5_k_unpack_metadata_records(%block_count: index) {
+  %c1 = index.constant 1 : index
+  %c8 = index.constant 8 : index
+  kernel.launch.config workgroups(%block_count, %c1, %c1) workgroup_size(%c8, %c1, %c1) : index
+} launch(%block_count: index, %input: buffer, %scales: buffer, %minimums: buffer) {
+  %bounded_block_count = index.assume %block_count [range(%block_count, 1, 256)] : index
+  %block = kernel.workgroup.id<x> : index
+  %group = kernel.workitem.id<x> : index
+  %c1 = index.constant 1 : index
+  %base = index.constant 0 : offset
+  %bounded_block = index.assume %block [lt(%block, %bounded_block_count)] : index
+  %input_view = buffer.view %input[%base] : buffer -> view<[%bounded_block_count]x44xi32>
+  %scale_view = buffer.view %scales[%base] : buffer -> view<[%bounded_block_count]x8xi32>
+  %minimum_view = buffer.view %minimums[%base] : buffer -> view<[%bounded_block_count]x8xi32>
+  %packed_scales = vector.load %input_view[%bounded_block, %c1] : view<[%bounded_block_count]x44xi32> -> vector<3xi32>
+  %scale, %minimum = func.call @ggml_q4_k_unpack_scale_minimum(%packed_scales, %group) : (vector<3xi32>, index) -> (i32, i32)
+  view.store %scale, %scale_view[%bounded_block, %group] : i32, view<[%bounded_block_count]x8xi32>
+  view.store %minimum, %minimum_view[%bounded_block, %group] : i32, view<[%bounded_block_count]x8xi32>
+  kernel.return
+}
+
+check.case public @ggml_q5_k_selector_layout_case {
+  %code_input = check.generate.iota offset(0) step(1) : tensor<16xi8>
+  %high_input = check.generate.fill value(-86) : tensor<16xi8>
+  %output = check.generate.fill value(-1) : tensor<128xi8>
+  %group0 = check.tensor.view %output offset(0) : tensor<128xi8> -> tensor<16xi8>
+  %group1 = check.tensor.view %output offset(16) : tensor<128xi8> -> tensor<16xi8>
+  %group2 = check.tensor.view %output offset(32) : tensor<128xi8> -> tensor<16xi8>
+  %group3 = check.tensor.view %output offset(48) : tensor<128xi8> -> tensor<16xi8>
+  %group4 = check.tensor.view %output offset(64) : tensor<128xi8> -> tensor<16xi8>
+  %group5 = check.tensor.view %output offset(80) : tensor<128xi8> -> tensor<16xi8>
+  %group6 = check.tensor.view %output offset(96) : tensor<128xi8> -> tensor<16xi8>
+  %group7 = check.tensor.view %output offset(112) : tensor<128xi8> -> tensor<16xi8>
+  %expected_low = check.generate.iota offset(0) step(1) : tensor<16xi8>
+  %expected_high = check.generate.fill value(16) : tensor<16xi8>
+  kernel.launch @test_ggml_q5_k_unpack_selector_table(%code_input, %high_input, %output) : (tensor<16xi8>, tensor<16xi8>, tensor<128xi8>)
+  check.expect.equal actual(%group0) expected(%expected_low) : tensor<16xi8>
+  check.expect.equal actual(%group1) expected(%expected_high) : tensor<16xi8>
+  check.expect.equal actual(%group2) expected(%expected_low) : tensor<16xi8>
+  check.expect.equal actual(%group3) expected(%expected_high) : tensor<16xi8>
+  check.expect.equal actual(%group4) expected(%expected_low) : tensor<16xi8>
+  check.expect.equal actual(%group5) expected(%expected_high) : tensor<16xi8>
+  check.expect.equal actual(%group6) expected(%expected_low) : tensor<16xi8>
+  check.expect.equal actual(%group7) expected(%expected_high) : tensor<16xi8>
+  check.return
+}
+
+// Decodes the independently generated byte sequence as a complete record.
+// Groups four through seven distinguish both code pages and both packet halves
+// while crossing high-plane and high-nibble boundaries.
+check.case public @ggml_q5_k_record_layout_case {
+  %element_count = check.literal value(256) : index
+  %input = check.generate.iota offset(-128) step(1) : tensor<176xi8>
+  %output = check.generate.fill value(-1) : tensor<256xi8>
+  %group4_half0 = check.tensor.view %output offset(128) : tensor<256xi8> -> tensor<16xi8>
+  %group4_half1 = check.tensor.view %output offset(144) : tensor<256xi8> -> tensor<16xi8>
+  %group5_half0 = check.tensor.view %output offset(160) : tensor<256xi8> -> tensor<16xi8>
+  %group5_half1 = check.tensor.view %output offset(176) : tensor<256xi8> -> tensor<16xi8>
+  %group6_half0 = check.tensor.view %output offset(192) : tensor<256xi8> -> tensor<16xi8>
+  %group6_half1 = check.tensor.view %output offset(208) : tensor<256xi8> -> tensor<16xi8>
+  %group7_half0 = check.tensor.view %output offset(224) : tensor<256xi8> -> tensor<16xi8>
+  %group7_half1 = check.tensor.view %output offset(240) : tensor<256xi8> -> tensor<16xi8>
+  %expected_group4_half0 = check.generate.iota offset(16) step(1) : tensor<16xi8>
+  %expected_group4_half1 = check.generate.iota offset(0) step(1) : tensor<16xi8>
+  %expected_group5_half0 = check.generate.fill value(15) : tensor<16xi8>
+  %expected_group5_half1 = check.generate.fill value(16) : tensor<16xi8>
+  %expected_group6_half0 = check.generate.iota offset(0) step(1) : tensor<16xi8>
+  %expected_group6_half1 = check.generate.iota offset(0) step(1) : tensor<16xi8>
+  %expected_group7_half0 = check.generate.fill value(17) : tensor<16xi8>
+  %expected_group7_half1 = check.generate.fill value(18) : tensor<16xi8>
+  kernel.launch @test_ggml_q5_k_unpack_codes[%element_count](%element_count, %input, %output) : [index](index, tensor<176xi8>, tensor<256xi8>)
+  check.expect.equal actual(%group4_half0) expected(%expected_group4_half0) : tensor<16xi8>
+  check.expect.equal actual(%group4_half1) expected(%expected_group4_half1) : tensor<16xi8>
+  check.expect.equal actual(%group5_half0) expected(%expected_group5_half0) : tensor<16xi8>
+  check.expect.equal actual(%group5_half1) expected(%expected_group5_half1) : tensor<16xi8>
+  check.expect.equal actual(%group6_half0) expected(%expected_group6_half0) : tensor<16xi8>
+  check.expect.equal actual(%group6_half1) expected(%expected_group6_half1) : tensor<16xi8>
+  check.expect.equal actual(%group7_half0) expected(%expected_group7_half0) : tensor<16xi8>
+  check.expect.equal actual(%group7_half1) expected(%expected_group7_half1) : tensor<16xi8>
+  check.return
+}
+
+check.case public @ggml_q5_k_code_extrema_case {
+  %element_count = check.literal value(256) : index
+  %low_input = check.generate.fill value(0) : tensor<176xi8>
+  %high_input = check.generate.fill value(-1) : tensor<176xi8>
+  %low_output = check.generate.fill value(-1) : tensor<256xi8>
+  %high_output = check.generate.fill value(-1) : tensor<256xi8>
+  %expected_low = check.generate.fill value(0) : tensor<256xi8>
+  %expected_high = check.generate.fill value(31) : tensor<256xi8>
+  kernel.launch @test_ggml_q5_k_unpack_codes[%element_count](%element_count, %low_input, %low_output) : [index](index, tensor<176xi8>, tensor<256xi8>)
+  kernel.launch @test_ggml_q5_k_unpack_codes[%element_count](%element_count, %high_input, %high_output) : [index](index, tensor<176xi8>, tensor<256xi8>)
+  check.expect.equal actual(%low_output) expected(%expected_low) : tensor<256xi8>
+  check.expect.equal actual(%high_output) expected(%expected_high) : tensor<256xi8>
+  check.return
+}
+
+check.case public @ggml_q5_k_tail_case {
+  %element_count = check.literal value(243) : index
+  %input = check.generate.fill value(-1) : tensor<176xi8>
+  %output = check.generate.fill value(-1) : tensor<243xi8>
+  %expected = check.generate.fill value(31) : tensor<243xi8>
+  kernel.launch @test_ggml_q5_k_unpack_codes[%element_count](%element_count, %input, %output) : [index](index, tensor<176xi8>, tensor<243xi8>)
+  check.expect.equal actual(%output) expected(%expected) : tensor<243xi8>
+  check.return
+}
+
+check.case public @ggml_q5_k_metadata_layout_case {
+  %block_count = check.literal value(1) : index
+  %input = check.generate.iota offset(-128) step(1) : tensor<176xi8>
+  %scales = check.generate.fill value(-1) : tensor<8xi32>
+  %minimums = check.generate.fill value(-1) : tensor<8xi32>
+  %low_scales = check.tensor.view %scales offset(0) : tensor<8xi32> -> tensor<4xi32>
+  %high_scales = check.tensor.view %scales offset(16) : tensor<8xi32> -> tensor<4xi32>
+  %low_minimums = check.tensor.view %minimums offset(0) : tensor<8xi32> -> tensor<4xi32>
+  %high_minimums = check.tensor.view %minimums offset(16) : tensor<8xi32> -> tensor<4xi32>
+  %expected_low_scales = check.generate.iota offset(4) step(1) : tensor<4xi32>
+  %expected_high_scales = check.generate.iota offset(44) step(1) : tensor<4xi32>
+  %expected_low_minimums = check.generate.iota offset(8) step(1) : tensor<4xi32>
+  %expected_high_minimums = check.generate.fill value(40) : tensor<4xi32>
+  kernel.launch @test_ggml_q5_k_unpack_metadata_records[%block_count](%block_count, %input, %scales, %minimums) : [index](index, tensor<176xi8>, tensor<8xi32>, tensor<8xi32>)
+  check.expect.equal actual(%low_scales) expected(%expected_low_scales) : tensor<4xi32>
+  check.expect.equal actual(%high_scales) expected(%expected_high_scales) : tensor<4xi32>
+  check.expect.equal actual(%low_minimums) expected(%expected_low_minimums) : tensor<4xi32>
+  check.expect.equal actual(%high_minimums) expected(%expected_high_minimums) : tensor<4xi32>
+  check.return
+}
+
+check.case public @ggml_q5_k_codes_benchmark_case {
+  %element_count = check.literal value(65536) : index
+  %input = check.generate.fill value(-1) : tensor<45056xi8>
+  %output = check.generate.fill value(-1) : tensor<65536xi8>
+  %expected = check.generate.fill value(31) : tensor<65536xi8>
+  kernel.launch @test_ggml_q5_k_unpack_codes[%element_count](%element_count, %input, %output) : [index](index, tensor<45056xi8>, tensor<65536xi8>)
+  check.expect.equal actual(%output) expected(%expected) : tensor<65536xi8>
+  check.return
+}
+
+check.benchmark<@ggml_q5_k_codes_benchmark_case> @ggml_q5_k_unpack_codes_benchmark

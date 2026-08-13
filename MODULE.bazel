@@ -1,0 +1,16 @@
+module(
+    name = "hrx_loom_kernels",
+    version = "0.0.0",
+    bazel_compatibility = [">=9.1.0"],
+)
+
+bazel_dep(name = "iree", version = "0.0.0")
+
+# Pin the complete Loom rule and source-toolchain identity to one immutable HRX
+# revision. Local compiler development uses Bazel's --override_module flag and
+# never edits this file.
+git_override(
+    module_name = "iree",
+    commit = "d1d22fd54695f9805aa5a3f1ed871eee9751af92",
+    remote = "https://github.com/ROCm/hrx-system.git",
+)

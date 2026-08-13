@@ -1,0 +1,17 @@
+load("@iree//build_tools/bazel:python.bzl", "iree_py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "defs.bzl",
+    "source_policy.py",
+])
+
+iree_py_test(
+    name = "source_policy_test",
+    srcs = [
+        "source_policy.py",
+        "source_policy_test.py",
+    ],
+    main = "source_policy_test.py",
+)

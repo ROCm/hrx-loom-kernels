@@ -1,0 +1,5 @@
+try-import %workspace%/.bazelrc.local
+
+build --color=yes
+build:amdgpu --@iree//runtime/config/hal:drivers=local-sync,local-task,null,amdgpu
+test --test_output=errors
