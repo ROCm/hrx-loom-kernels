@@ -24,10 +24,11 @@ from ..qualification import benchmark_query_expression
 
 
 LOOM_BENCHMARK_TARGET = (
-    "@iree//loom/src/loom/tools/iree-benchmark-loom:iree-benchmark-loom"
+    "@hrx//loom/src/loom/tools/iree-benchmark-loom:iree-benchmark-loom"
 )
 LOOM_BENCHMARK_TARGET_SUFFIX = "_benchmark_module"
-SWEEP_SCHEMA = "hrx-loom-kernels.benchmark-sweep.v1"
+SWEEP_SCHEMA = "hrx-loom-kernels.benchmark-sweep.v2"
+_LEGACY_SWEEP_SCHEMAS = {"hrx-loom-kernels.benchmark-sweep.v1"}
 _EXECUTION_ENVIRONMENT_PREFIXES = (
     "CUDA_",
     "GPU_",
@@ -49,7 +50,7 @@ class Error(UserError):
 
 @dataclass(frozen=True)
 class BenchmarkModule:
-    """One selected benchmark archive materialized by Bazel."""
+    """One selected, closed benchmark module materialized by Bazel."""
 
     selection_label: str
     label: str
@@ -174,9 +175,8 @@ def resolve_modules(
             *bazel_options,
             "--output=starlark",
             "--starlark:expr="
-            'str(target.label) + "\\t" + "\\t".join(['
-            'str(file.owner) + "\\t" + file.path '
-            "for file in target.files.to_list()])",
+            'str(target.label) + "\\t" + "\\t".join('
+            "[file.path for file in target.files.to_list()])",
         ],
         capture_output=True,
     )
@@ -185,13 +185,15 @@ def resolve_modules(
         if not line.strip():
             continue
         fields = line.split("\t")
-        if len(fields) != 3 or not fields[2].endswith(".loombc"):
+        if len(fields) != 2 or not fields[1].endswith(".loombc"):
             raise Error(
-                "Each benchmark selection must forward exactly one .loombc archive"
+                "Each benchmark selection must forward exactly one .loombc module"
             )
         selection_label = _normalize_cquery_label(fields[0])
-        label = _normalize_cquery_label(fields[1])
-        module_path = repository_root / fields[2]
+        if not selection_label.endswith(LOOM_BENCHMARK_TARGET_SUFFIX):
+            raise Error(f"Invalid benchmark selection label: {selection_label}")
+        label = selection_label.removesuffix(LOOM_BENCHMARK_TARGET_SUFFIX)
+        module_path = repository_root / fields[1]
         if not module_path.is_file():
             raise Error(
                 f"Bazel did not materialize benchmark module {label}: {module_path}"
@@ -205,9 +207,9 @@ def resolve_modules(
             "Benchmark target resolution changed the selected targets: "
             f"selected {sorted(selected_labels)}, resolved {sorted(resolved_labels)}"
         )
-    owner_labels = [module.label for module in modules]
-    if len(set(owner_labels)) != len(owner_labels):
-        raise Error("Multiple benchmark selections resolved to the same archive")
+    module_labels = [module.label for module in modules]
+    if len(set(module_labels)) != len(module_labels):
+        raise Error("Multiple benchmark selections resolved to the same module")
     return sorted(modules, key=lambda module: module.label)
 
 
@@ -426,7 +428,8 @@ def _load_index(output_root: Path) -> dict[str, Any]:
         payload = json.loads(index_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise Error(f"Cannot read benchmark workspace index: {index_path}") from error
-    if payload.get("schema") != SWEEP_SCHEMA or not isinstance(
+    schema = payload.get("schema")
+    if schema not in {SWEEP_SCHEMA, *_LEGACY_SWEEP_SCHEMAS} or not isinstance(
         payload.get("entries"), dict
     ):
         raise Error(f"Unsupported benchmark workspace index: {index_path}")
@@ -721,9 +724,7 @@ def run(
         cached = index["entries"].get(module.label)
         previous_sources = cached.get("sources", []) if cached else []
         changed_sources = _source_changes(previous_sources, sources)
-        artifact_changed = (
-            cached is None or cached.get("module_sha256") != module_sha256
-        )
+        module_changed = cached is None or cached.get("module_sha256") != module_sha256
         runner_changed = cached is None or cached.get("runner_sha256") != runner_sha256
         invocation_changed = (
             cached is None or cached.get("invocation_sha256") != invocation_sha256
@@ -734,6 +735,7 @@ def run(
                 "label": module.label,
                 "module_sha256": module_sha256,
                 "runner_sha256": runner_sha256,
+                "schema": SWEEP_SCHEMA,
             }
         )
         evidence_available = bool(cached) and _cached_evidence_exists(
@@ -751,7 +753,7 @@ def run(
         else:
             if changed_sources:
                 reasons.append("source_changed")
-            if artifact_changed:
+            if module_changed:
                 reasons.append("module_changed")
             if runner_changed:
                 reasons.append("runner_changed")
@@ -764,7 +766,7 @@ def run(
 
         entry: dict[str, Any] = {
             "artifact_bundle": None,
-            "artifact_changed": artifact_changed,
+            "artifact_changed": module_changed,
             "artifact_run_id": None,
             "attempted": False,
             "benchmarks": [],

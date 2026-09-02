@@ -13,7 +13,7 @@
 // reuse, floating-point materialization, contraction, and launch geometry.
 // Selects one nibble plane from 16 consecutive packed-code bytes. `nibble` is
 // zero for the low plane and one for the high plane.
-func.def inline @ggml_q4_k_unpack_codes16(%packed_codes: vector<4xi32>, %nibble: index) -> (vector<16xi8>) {
+func.def public inline @ggml_q4_k_unpack_codes16(%packed_codes: vector<4xi32>, %nibble: index) -> (vector<16xi8>) {
   %bounded_nibble = index.assume %nibble [range(%nibble, 0, 1)] : index
   %c4 = index.constant 4 : index
   %nibble_mask = vector.constant 252645135 : vector<4xi32>
@@ -29,7 +29,7 @@ func.def inline @ggml_q4_k_unpack_codes16(%packed_codes: vector<4xi32>, %nibble:
 // Recovers one scale/minimum pair from the packed 12-byte metadata carrier.
 // Group ordinals 0-3 use the low six bits of direct bytes. Groups 4-7 join
 // low nibbles from the final four bytes with high bits from the first eight.
-func.def inline @ggml_q4_k_unpack_scale_minimum(%packed_scales: vector<3xi32>, %group: index) -> (i32, i32) {
+func.def public inline @ggml_q4_k_unpack_scale_minimum(%packed_scales: vector<3xi32>, %group: index) -> (i32, i32) {
   %bounded_group = index.assume %group [range(%group, 0, 7)] : index
   %scale0 = vector.extract %packed_scales[0] : vector<3xi32> -> i32
   %scale1 = vector.extract %packed_scales[1] : vector<3xi32> -> i32

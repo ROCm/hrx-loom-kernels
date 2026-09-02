@@ -15,9 +15,11 @@
 //
 // These motifs define the physical representation without selecting a launch
 // grid or adopting GGML's operation ABI.
+template.decl @ggml.quantize_q8_1_x4.group_body(%publish_output: i1, %group_count: index, %group: index, %input: buffer, %output: buffer)
+
 // Loads one logical 32-element Q8_1 block from the four-way physical packing.
 // `row_byte_base` addresses the first x4 group for one activation row.
-func.def inline @ggml_q8_1_x4_block(%q8_input: buffer, %row_byte_base: offset, %q8_block: index) -> (vector<32xi8>, f32, f32) {
+func.def public inline @ggml_q8_1_x4_block(%q8_input: buffer, %row_byte_base: offset, %q8_block: index) -> (vector<32xi8>, f32, f32) {
   %c1 = index.constant 1 : index
   %c2 = index.constant 2 : index
   %c4 = index.constant 4 : index
@@ -47,7 +49,7 @@ func.def inline @ggml_q8_1_x4_block(%q8_input: buffer, %row_byte_base: offset, %
 // Loads one packed four-value word and its block scale. Dot-product kernels
 // use this narrower form so a lane does not load the other seven words owned
 // by its subgroup peers.
-func.def inline @ggml_q8_1_x4_word(%q8_input: buffer, %row_byte_base: offset, %q8_block: index, %word_in_block: index) -> (vector<4xi8>, f32) {
+func.def public inline @ggml_q8_1_x4_word(%q8_input: buffer, %row_byte_base: offset, %q8_block: index, %word_in_block: index) -> (vector<4xi8>, f32) {
   %c2 = index.constant 2 : index
   %c4 = index.constant 4 : index
   %c8 = index.constant 8 : index
@@ -77,7 +79,7 @@ func.def inline @ggml_q8_1_x4_word(%q8_input: buffer, %row_byte_base: offset, %q
 // 32-lane wave executes after all 128 source values are visible. The uniform
 // publication predicate suppresses only destination writes so every lane still
 // reaches the workgroup barriers.
-func.template<ggml.quantize_q8_1_x4.group_body> device @ggml_quantize_q8_1_x4_group_body(%publish_output: i1, %group_count0: index, %group0: index, %input: buffer, %output: buffer) {
+template.def<@ggml.quantize_q8_1_x4.group_body> device @ggml_quantize_q8_1_x4_group_body(%publish_output: i1, %group_count0: index, %group0: index, %input: buffer, %output: buffer) {
   %group_count, %group = index.assume %group_count0, %group0 [range(%group_count0, 1, 524288), lt(%group0, %group_count0)] : index, index
   %lane = kernel.workitem.id<x> : index
   %c0 = index.constant 0 : index
@@ -165,5 +167,5 @@ func.template<ggml.quantize_q8_1_x4.group_body> device @ggml_quantize_q8_1_x4_gr
     %s_index = index.add %ds_index, %c1 : index
     view.store %s_f16, %group_ds[%s_index] : f16, view<8xf16>
   }
-  func.return
+  template.return
 }

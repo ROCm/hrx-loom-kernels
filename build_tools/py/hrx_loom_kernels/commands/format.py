@@ -12,7 +12,7 @@ from typing import Any
 from ..context import RepositoryContext, UserError
 
 
-LOOM_FORMAT_TARGET = "@iree//loom/src/loom/tools/loom-format"
+LOOM_FORMAT_TARGET = "@hrx//loom/src/loom/tools/loom-format"
 LOOM_SOURCE_ROOTS = ("experimental", "kernel", "model", "motif", "target")
 
 

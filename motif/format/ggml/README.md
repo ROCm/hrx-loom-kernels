@@ -12,16 +12,15 @@ Format sources own their physical byte layout, element interpretation, block
 addressing, and links to the specification or implementation snapshot from
 which those contracts were derived. Reusable accessors are `func.def`
 operations; reusable encoders and decoders that require specialization are
-`func.template` operations. Neither form chooses grid dimensions or exposes a
+`template.def` operations. Neither form chooses grid dimensions or exposes a
 kernel launch ABI.
 
 GGML-compatible kernels, native GEMM and attention kernels, and model-level
 fusions all link these motifs directly. This keeps physical encodings and
 transient backend packings from being trapped inside one operator catalog.
-Consumers can depend on individual format targets or link
-`//motif/format/ggml:ggml` as the complete GGML format archive. The aggregate
-has no sources of its own: Bazel links the already-checked component archives
-once and leaves target specialization to the consuming kernel or program.
+Consumers name each format library whose public symbols they use. Loom keeps
+those modules distinct through linking and requires direct dependencies, so a
+source-less aggregate cannot masquerade as a re-exporting archive.
 
 ## References
 

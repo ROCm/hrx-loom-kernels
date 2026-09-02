@@ -24,7 +24,9 @@
 // The sampled case covers token counts 1, 4, 8, 17, 32, 63, 128, 129, and 512
 // at width 2048. Declared benchmarks name decode, small-batch, and prefill
 // workloads.
-kernel.def @ggml_quantize_q8_1_x4_f32(%token_count0: index, %input_size0: index) {
+template.decl @ggml.quantize_q8_1_x4.group_body(%publish_output: i1, %group_count: index, %group: index, %input: buffer, %output: buffer)
+
+kernel.def export("ggml_quantize_q8_1_x4_f32") @ggml_quantize_q8_1_x4_f32(%token_count0: index, %input_size0: index) {
   %token_count = index.assume %token_count0 [range(%token_count0, 1, 2048)] : index
   %input_size = index.assume %input_size0 [range(%input_size0, 128, 32768), mul(%input_size0, 128)] : index
   %elements_per_group = index.constant 128 : index
@@ -44,7 +46,7 @@ kernel.def @ggml_quantize_q8_1_x4_f32(%token_count0: index, %input_size0: index)
   %group0 = kernel.workgroup.id<x> : index
   %group = index.assume %group0 [lt(%group0, %group_count)] : index
   %publish_output = scalar.constant true : i1
-  func.apply<ggml.quantize_q8_1_x4.group_body>(%publish_output, %group_count, %group, %input, %output) : (i1, index, index, buffer, buffer)
+  template.apply<@ggml.quantize_q8_1_x4.group_body>(%publish_output, %group_count, %group, %input, %output) : (i1, index, index, buffer, buffer)
   kernel.return
 }
 

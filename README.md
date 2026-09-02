@@ -10,7 +10,7 @@ The [contribution contract](CONTRIBUTING.md) defines the source, documentation,
 correctness, benchmark, target-qualification, and performance-evidence gates
 applied to every admitted library.
 
-Motifs are linkable `func.def` and `func.template` components that express
+Motifs are linkable `func.def` and `template.def` components that express
 reusable representations and algorithms without imposing a launch ABI. Kernels
 are concrete `kernel.def` entry points that compose motifs for a particular
 operation contract and ABI. For example, the
@@ -19,21 +19,25 @@ operation contract and ABI. For example, the
 
 ## Quickstart
 
-Select the Loom revision pinned by this repository and build an optimized
-portable bytecode archive:
+Select the HRX revision pinned by this repository and build an optimized kernel
+module together with its motif dependency:
 
 ```shell
 python dev.py setup --release
-bazelisk build -c opt //kernel/ggml/quantize:q8_1_x4_f32
+bazelisk build -c opt \
+  //kernel/ggml/quantize:q8_1_x4_f32_benchmark_module
 LOOM_MODULE="$PWD/bazel-bin/kernel/ggml/quantize/q8_1_x4_f32.loombc"
+LOOM_LIBRARY="$PWD/bazel-bin/motif/format/ggml/q8_1_x4.loombc"
+LOOM_BENCHMARK_MODULE="$PWD/bazel-bin/kernel/ggml/quantize/q8_1_x4_f32_benchmark_module.loombc"
 ```
 
 Run every public correctness case on an AMD GPU:
 
 ```shell
 bazelisk run -c opt --config=amdgpu \
-  @iree//loom/src/loom/tools/iree-test-loom -- \
+  @hrx//loom/src/loom/tools/iree-test-loom -- \
   "$LOOM_MODULE" \
+  --library="$LOOM_LIBRARY" \
   --device=amdgpu://0 \
   --sanitizer=access
 ```
@@ -42,12 +46,12 @@ When ROCr is not available through the dynamic loader path, set
 `IREE_HAL_AMDGPU_LIBHSA_PATH` to the absolute path of
 `libhsa-runtime64.so.1` before running the tool.
 
-Benchmark a declared workload from the same archive:
+Benchmark a declared workload from the same module closure:
 
 ```shell
 bazelisk run -c opt --config=amdgpu \
-  @iree//loom/src/loom/tools/iree-benchmark-loom -- \
-  "$LOOM_MODULE" \
+  @hrx//loom/src/loom/tools/iree-benchmark-loom -- \
+  "$LOOM_BENCHMARK_MODULE" \
   --device=amdgpu://0 \
   --benchmark=@ggml_quantize_q8_1_x4_f32_decode \
   --measure=dispatch_complete \
@@ -77,9 +81,10 @@ so its schemas and lifecycle remain independent. Benchmark sweep workspaces use
 
 ### Sweep repository benchmarks
 
-`dev.py benchmark` discovers every kernel and test archive admitted to the
-repository benchmark corpus, builds those archives and the public benchmark
-runner from the selected Loom revision, and maintains a local sweep workspace:
+`dev.py benchmark` discovers every kernel and test module admitted to the
+repository benchmark corpus, builds a closed runner module from each verified
+library closure plus the public benchmark runner from the selected HRX
+revision, and maintains a local sweep workspace:
 
 ```shell
 SWEEP_ROOT=.reports/benchmark/gfx1100
@@ -94,10 +99,11 @@ python dev.py benchmark \
 ```
 
 Repeating the command is incremental. Bazel rebuilds only invalidated actions,
-and the sweep executes only modules whose final `.loombc`, benchmark runner, or
-invocation identity changed. A shared motif edit therefore reruns the archive
-closure that actually changed; an edit that produces byte-identical archives is
-reported as potentially affected without repeating the physical benchmark.
+and the sweep executes only roots whose closed benchmark `.loombc`, benchmark
+runner, or invocation identity changed. A shared motif edit therefore reruns
+the exact consumers whose merged runner input changed; an edit that produces a
+byte-identical module is reported as potentially affected without repeating the
+physical benchmark.
 `--rerun-all` deliberately captures fresh measurements for every selected
 module. A changed benchmark runner invalidates every module in the selected
 scope, so compiler development can use a narrow target pattern while ordinary
@@ -126,9 +132,11 @@ Each invocation also writes an immutable manifest under `runs/`. Native
 `iree-benchmark-loom` bundles live below `artifacts/` and retain their public
 `results.json` or `results.jsonl` schema; unchanged modules point back to the
 matching earlier bundle instead of copying or reinterpreting it. The mutable
-`index.json` keeps prior module evidence available across targeted subsets. The
-workspace is rooted at `--output-dir`, not in Bazel's output tree, so build-cache
-cleanup does not erase measurement history.
+`index.json` keeps prior module evidence available across targeted subsets.
+Version 2 keys reuse on the closed runner module while accepting and upgrading
+version 1 workspaces on the next successful write. The workspace is rooted at
+`--output-dir`, not in Bazel's output tree, so build-cache cleanup does not erase
+measurement history.
 
 `--target` accepts Bazel target patterns. Recursive scopes select admitted
 benchmark modules below a package, exact library labels select one module, and
@@ -167,17 +175,18 @@ The live tree and archived base keep independent Bazel output bases while
 sharing Bazel's disk action cache, so matching links and target compilations are
 reused safely across both workspaces.
 
-A local Loom checkout selected by `python dev.py setup --loom-source=...` is
+A local HRX checkout selected by `python dev.py setup --hrx-source=...` is
 applied to the archived base as well. This isolates library-source changes while
 both sides use the same uncommitted compiler. The comparison records the public
 report tool's implementation identity and fails rather than crossing
 incompatible tool revisions.
 
-Bazel discovers compilation leaves through Loom's public
-`LoomCompilationInfo` provider. Each immutable capture pairs the final target
-artifact with its summary compile report and a public `loom-compile-report show`
-view. Common leaves are compared by digest first; byte-identical pairs require
-no semantic report work. Changed pairs run the public
+Bazel discovers final kernel products through Loom's public `LoomBinaryInfo`
+provider and resolves each product's typed target profile. Each immutable
+capture pairs the final target artifact with its summary compile report and a
+public `loom-compile-report show` view. Common products are compared by digest
+first; byte-identical pairs require no semantic report work. Changed pairs run
+the public
 `loom-compile-report diff` command and preserve its complete text and JSON views.
 Added, removed, changed, unchanged, and incomparable leaves remain distinct
 outcomes.
@@ -203,9 +212,9 @@ python dev.py compile-report \
   --target=//motif/format/ggml/...
 ```
 
-An exact library label selects its target-qualified compilation leaves. A motif
-or package scope also selects downstream compilation leaves that depend on the
-selected sources, so changing a shared motif reports every affected kernel
+An exact library label selects its final target products. A motif or package
+scope also selects downstream products that depend on the selected sources, so
+changing a shared motif reports every affected kernel
 without maintaining an inventory. Repeating `--target` forms a union. Repeating
 `--config` applies the same named Bazel configurations to both workspaces.
 
@@ -234,15 +243,16 @@ those immutable records.
 
 ### Inspect compiler evidence
 
-Cross-compile the archive and retain a detailed report as an optimization
-baseline:
+Cross-compile the module closure and retain a detailed report as an
+optimization baseline:
 
 ```shell
-LOOM_COMPILE_TOOL="@iree//loom/src/loom/tools/loom-compile"
-LOOM_REPORT_TOOL="@iree//loom/py/loom/tools:loom-compile-report"
+LOOM_COMPILE_TOOL="@hrx//loom/src/loom/tools/loom-compile"
+LOOM_REPORT_TOOL="@hrx//loom/py/loom/tools:loom-compile-report"
 
 bazelisk run -c opt "$LOOM_COMPILE_TOOL" -- \
   "$LOOM_MODULE" \
+  --library="$LOOM_LIBRARY" \
   --backend=amdgpu-hal \
   --target=gfx11-generic \
   --compile-report=details \
@@ -272,19 +282,19 @@ attributable to the kernel or compiler change under investigation.
 | --- | --- |
 | [`build_tools/`](build_tools/) | Repository setup, policy, and build integration. |
 | [`build_tools/bazel/`](build_tools/bazel/) | Repository policy wrappers around Loom's public Bazel rules. |
-| [`motif/`](motif/) | Linkable `func.def` and `func.template` building blocks. |
+| [`motif/`](motif/) | Linkable `func.def` and `template.def` building blocks. |
 | [`motif/format/`](motif/format/) | Reusable physical tensor-representation components. |
 | [`motif/format/ggml/`](motif/format/ggml/) | GGML tensor encodings independent of GGML's execution ABI. |
 | [`kernel/`](kernel/) | Launchable `kernel.def` packages with tests and benchmarks. |
 | [`kernel/ggml/`](kernel/ggml/) | Leaf compatibility implementations of GGML operation kernels. |
 | [`kernel/ggml/quantize/`](kernel/ggml/quantize/) | GGML-compatible quantization entry points. |
 | [`model/`](model/) | Model and command-program composition roots. |
-| [`target/`](target/) | Reusable build-time qualification profiles. |
-| [`target/amdgpu/`](target/amdgpu/) | AMDGPU artifact qualification profiles. |
+| [`target/`](target/) | Repository execution profiles and target-policy integration. |
+| [`target/amdgpu/`](target/amdgpu/) | AMDGPU hardware execution policy. |
 
 ## Build and test
 
-The checked-in `MODULE.bazel` selects a specific Loom revision. Bazel expands
+The checked-in `MODULE.bazel` selects a specific HRX revision. Bazel expands
 each library declaration into its formatting, linking, planning, and target
 qualification policy:
 
@@ -319,7 +329,7 @@ HRX worktree makes Bazel rebuild changed compiler tools directly from
 uncommitted source:
 
 ```shell
-python dev.py setup --loom-source /path/to/hrx-system
+python dev.py setup --hrx-source /path/to/hrx-system
 python dev.py test
 ```
 
@@ -329,8 +339,8 @@ and passing paths limits either mode to those files. Direct
 `bazelisk test //...` invocations retain per-library format tests even when the
 Git hook is not installed.
 
-`loom_motif_library` emits a linkable `.loombc` archive and validates that its
+`loom_motif_library` emits one linkable `.loombc` module and validates that its
 sources remain non-launchable. `loom_kernel_library` adds launchable kernels,
-benchmark planning, target compilation, and structured compile reports. The
-bytecode archive remains the portable deployment unit used for JIT
-specialization.
+benchmark planning, typed target products, and structured compile reports. A
+root module plus its explicit library closure is the portable input to JIT
+specialization; target products are the loader-ready deployment artifacts.

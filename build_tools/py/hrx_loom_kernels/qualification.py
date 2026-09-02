@@ -40,9 +40,12 @@ def _motif_admission_query_expression(repository_root: Path) -> str:
 def _check_motif_qualification(context: RepositoryContext) -> None:
     output = context.bazel(
         [
-            "query",
+            "cquery",
             _motif_admission_query_expression(context.repository_root),
             "--output=label",
+            "--noimplicit_deps",
+            "--notool_deps",
+            "--noinclude_aspects",
         ],
         capture_output=True,
     )

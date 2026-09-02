@@ -78,7 +78,7 @@ class WorkingTreeIdentityTest(GitRepositoryTestCase):
 class BaseSourceTest(GitRepositoryTestCase):
     def test_materializes_one_source_workspace_per_commit_and_local_config(self):
         self._write("BUILD.bazel", "# base\n")
-        self._write(".bazelrc.local", "common --override_module=iree=/loom\n")
+        self._write(".bazelrc.local", "common --override_module=hrx=/loom\n")
         commit = self._commit_all()
         output_root = self.repository_root / ".reports" / "compile"
         compile_report.initialize_workspace(self.repository_root, output_root)
@@ -102,7 +102,7 @@ class BaseSourceTest(GitRepositoryTestCase):
         self.assertEqual(identity, reused_identity)
         self.assertEqual(
             (source_root / ".bazelrc.local").read_text(encoding="utf-8"),
-            "common --override_module=iree=/loom\n",
+            "common --override_module=hrx=/loom\n",
         )
         self.assertFalse((source_root / ".git").exists())
 
@@ -116,24 +116,34 @@ class BaseSourceTest(GitRepositoryTestCase):
 
 
 class ProviderDiscoveryTest(unittest.TestCase):
-    def test_discovers_only_public_compilation_provider_rows(self):
-        output = (
+    def test_discovers_public_kernel_binary_products_and_target_profiles(self):
+        binary_output = (
             "\n"
-            "@@//kernel/example:first_compile"
+            "@@//kernel/example:first_kernel_binary_gfx11_generic"
             "\tbazel-out/bin/kernel/example/first.hsaco"
+            "\t1"
             "\tbazel-out/bin/kernel/example/first.compile.json"
-            "\tamdgpu-hal\tgfx11-generic\n"
+            "\t1\t@@hrx+//loom/target/amdgpu:gfx11-generic\n"
             "\n"
-            "@@//motif/example/test:second_compile"
-            "\tbazel-out/bin/motif/example/test/second.spv"
-            "\tbazel-out/bin/motif/example/test/second.compile.json"
-            "\tspirv-hal\tvulkan-spirv\n"
+            "@@//kernel/example:second_kernel_binary_gfx12_generic"
+            "\tbazel-out/bin/kernel/example/second.hsaco"
+            "\t1"
+            "\tbazel-out/bin/kernel/example/second.compile.json"
+            "\t1\t@@hrx+//loom/target/amdgpu:gfx12-generic\n"
+        )
+        profile_output = (
+            "@@hrx+//loom/target/amdgpu:gfx11-generic\tgfx11-generic\n"
+            "@@hrx+//loom/target/amdgpu:gfx12-generic\tgfx12-generic\n"
         )
         catalog = (
-            "//kernel/example:first_compile\n//motif/example/test:second_compile\n"
+            "//kernel/example:first\n"
+            "//kernel/example:second\n"
+            "//motif/example:test\n"
         )
         with mock.patch.object(
-            compile_report, "_bazel_output", side_effect=[catalog, output]
+            compile_report,
+            "_bazel_output",
+            side_effect=[catalog, binary_output, profile_output],
         ) as bazel_output:
             compilations = compile_report.discover_compilations(
                 Path("/repository"),
@@ -146,7 +156,7 @@ class ProviderDiscoveryTest(unittest.TestCase):
             compilations,
             [
                 compile_report.Compilation(
-                    label="//kernel/example:first_compile",
+                    label="//kernel/example:first_kernel_binary_gfx11_generic",
                     artifact_path=PurePosixPath(
                         "bazel-out/bin/kernel/example/first.hsaco"
                     ),
@@ -157,15 +167,15 @@ class ProviderDiscoveryTest(unittest.TestCase):
                     target="gfx11-generic",
                 ),
                 compile_report.Compilation(
-                    label="//motif/example/test:second_compile",
+                    label="//kernel/example:second_kernel_binary_gfx12_generic",
                     artifact_path=PurePosixPath(
-                        "bazel-out/bin/motif/example/test/second.spv"
+                        "bazel-out/bin/kernel/example/second.hsaco"
                     ),
                     report_path=PurePosixPath(
-                        "bazel-out/bin/motif/example/test/second.compile.json"
+                        "bazel-out/bin/kernel/example/second.compile.json"
                     ),
-                    backend="spirv-hal",
-                    target="vulkan-spirv",
+                    backend="amdgpu-hal",
+                    target="gfx12-generic",
                 ),
             ],
         )
@@ -175,7 +185,28 @@ class ProviderDiscoveryTest(unittest.TestCase):
             query_arguments[1],
             'rdeps(//..., set("//kernel/..." "//motif/..."))',
         )
-        self.assertIn("%LoomCompilationInfo", query_arguments[-1])
+        self.assertIn("%LoomBinaryInfo", query_arguments[-1])
+        profile_query_arguments = bazel_output.call_args_list[2].args[2]
+        self.assertEqual(profile_query_arguments[0], "cquery")
+        self.assertEqual(
+            profile_query_arguments[1],
+            'set("@@hrx+//loom/target/amdgpu:gfx11-generic" '
+            '"@@hrx+//loom/target/amdgpu:gfx12-generic")',
+        )
+        self.assertIn("%LoomAmdgpuTargetProfileInfo", profile_query_arguments[-1])
+
+    def test_rejects_kernel_product_with_multiple_compile_reports(self):
+        row = (
+            "@@//kernel/example:binary\tbazel-out/bin/example.hsaco\t2"
+            "\tbazel-out/bin/example.kernel.json"
+            "\tbazel-out/bin/example.command.json"
+            "\t1\t@@hrx+//loom/target/amdgpu:gfx11-generic"
+        )
+
+        with self.assertRaisesRegex(
+            compile_report.Error, "requires exactly one compile report"
+        ):
+            compile_report._parse_kernel_binary_row(row)
 
     def test_missing_pattern_produces_empty_side_of_comparison(self):
         with mock.patch.object(
@@ -198,11 +229,13 @@ class ProviderDiscoveryTest(unittest.TestCase):
             side_effect=[
                 "//kernel/example:example\n",
                 (
-                    "@@//kernel/example:example_compile"
+                    "@@//kernel/example:example_kernel_binary_gfx11_generic"
                     "\tbazel-out/bin/example.hsaco"
+                    "\t1"
                     "\tbazel-out/bin/example.compile.json"
-                    "\tamdgpu-hal\tgfx11-generic\n"
+                    "\t1\t@@hrx+//loom/target/amdgpu:gfx11-generic\n"
                 ),
+                "@@hrx+//loom/target/amdgpu:gfx11-generic\tgfx11-generic\n",
             ],
         ) as bazel_output:
             compile_report.discover_compilations(
@@ -223,11 +256,11 @@ class ReportToolTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             execution_root = Path(temporary_directory) / "execroot"
             relative_executable = PurePosixPath(
-                "bazel-out/bin/external/iree+/loom/tools/loom-compile-report"
+                "bazel-out/bin/external/hrx+/loom/tools/loom-compile-report"
             )
             executable = execution_root.joinpath(*relative_executable.parts)
             implementation = execution_root.joinpath(
-                "external", "iree+", "loom", "reporting", "report.py"
+                "external", "hrx+", "loom", "reporting", "report.py"
             )
             executable.parent.mkdir(parents=True)
             implementation.parent.mkdir(parents=True)
@@ -235,7 +268,7 @@ class ReportToolTest(unittest.TestCase):
             implementation.write_bytes(b"implementation one")
             target_files = (
                 f"executable\t{relative_executable}\n"
-                "runfile\texternal/iree+/loom/reporting/report.py\n"
+                "runfile\texternal/hrx+/loom/reporting/report.py\n"
                 "runfile\texternal/python/runtime\n"
             )
 

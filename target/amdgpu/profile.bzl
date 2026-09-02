@@ -1,13 +1,13 @@
 """AMDGPU execution profiles for Loom correctness programs."""
 
 load(
-    "@iree//loom/requirements:defs.bzl",
+    "@hrx//loom/requirements:defs.bzl",
     "EMIT_AMDGPU",
     "EXECUTE_IREE_HAL",
     "TARGET_ARCH_AMDGPU",
 )
 load(
-    "@iree//runtime/requirements:defs.bzl",
+    "@hrx//runtime/requirements:defs.bzl",
     "AMDGPU_RESOURCE",
     "HAL_AMDGPU",
 )

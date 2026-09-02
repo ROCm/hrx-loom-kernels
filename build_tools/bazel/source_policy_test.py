@@ -18,8 +18,9 @@ class SourcePolicyTest(unittest.TestCase):
                 ("format.loom", "func.def @load() {\n  func.return\n}\n"),
                 (
                     "quantize.loom",
-                    "func.template<quantize.block> device @body() {\n"
-                    "  func.return\n"
+                    "template.decl @quantize.block()\n"
+                    "template.def<@quantize.block> device @body() {\n"
+                    "  template.return\n"
                     "}\n",
                 ),
             ],
@@ -151,7 +152,7 @@ class SourcePolicyTest(unittest.TestCase):
                 "}\n"
             )
             (experimental_root / "BUILD.bazel").write_text(
-                'load("@iree//loom/build_tools/bazel:defs.bzl", '
+                'load("@hrx//loom/build_tools/bazel:defs.bzl", '
                 '"loom_library")\n'
                 'loom_library(name = "program", srcs = ["program.loom"])\n'
             )
@@ -200,7 +201,7 @@ class SourcePolicyTest(unittest.TestCase):
                 "kernel.def @q3() {\n} launch() {\n  kernel.return\n}\n"
             )
             (kernel_root / "BUILD.bazel").write_text(
-                'load("@iree//loom/build_tools/bazel:defs.bzl", '
+                'load("@hrx//loom/build_tools/bazel:defs.bzl", '
                 '"loom_kernel_library")\n'
                 'loom_kernel_library(name = "q3", srcs = glob(["*.loom"]))\n'
             )

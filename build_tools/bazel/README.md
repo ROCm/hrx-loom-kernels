@@ -4,24 +4,26 @@
 owned by this repository:
 
 - `loom_motif_library` is confined to `motif/`, rejects kernel dependencies,
-  emits a linked bytecode archive, marks source-bearing motifs for qualification
+  emits a linkable bytecode module, marks source-bearing motifs for qualification
   closure, and adds source-policy coverage.
 - `loom_kernel_library` is confined to `kernel/`, keeps GGML compatibility
   entry points as leaf launch surfaces, confines dependencies to motifs,
-  requires compile and execution qualification, and adds the normal format,
-  planning, and compilation checks.
+  requires at least one typed target profile and execution profile, and adds
+  the normal format, planning, final-product compilation, and execution checks.
 - `loom_test_library` is confined to explicit `test/` packages, keeps its
-  wrapper archive private and test-only, and passes authored test programs
-  directly to correctness runners with production archives as libraries. Test
-  leaves also require compile and execution qualification.
-- Generic compile targets and toolchain declarations are re-exported unchanged.
+  wrapper module private and test-only, and passes authored test programs
+  directly to correctness runners with production modules as libraries. Test
+  leaves require execution qualification but do not manufacture standalone
+  target products.
+- Execution-profile and Loom toolchain declarations are re-exported unchanged.
 
-Each kernel and test library emits a private filegroup carrying the stable
-`loom-benchmark-module` tag. The filegroup forwards only the library's `.loombc`
-archive, allowing repository tooling to discover inputs for
-`iree-benchmark-loom` without depending on Loom's private rule kinds. Generated
-format, plan, compile, and execution tests do not carry benchmark-discovery
-metadata.
+Each kernel and test library emits a private runner module carrying the stable
+`loom-benchmark-module` tag. HRX verifies direct dependencies while producing
+the relocatable library modules; the repository rule then merges that verified
+closure solely for `iree-benchmark-loom`, whose current command line accepts
+one module and no separate libraries. The merged product is not a published
+library or a re-export boundary. Generated format, plan, compile, and execution
+tests do not carry benchmark-discovery metadata.
 
 [`source_policy.py`](source_policy.py) verifies the filesystem-level portion of
 the contract. Every motif and kernel package has an adjacent `BUILD.bazel`,

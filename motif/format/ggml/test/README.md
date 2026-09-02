@@ -1,10 +1,10 @@
 # GGML Format Motif Tests
 
 These private programs wrap target-neutral GGML carrier functions in deliberate
-launch and buffer boundaries. Production archives contain only the motifs in
+launch and buffer boundaries. Production modules contain only the motifs in
 the parent package; the wrappers, cases, and microbenchmarks remain test-only
 and are passed directly to the correctness runner with those production
-archives as libraries.
+modules as libraries.
 
 Direct-carrier cases isolate bit-field interpretation and selector ordering.
 Record-level cases additionally cover the byte addressing, complete blocks,

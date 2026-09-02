@@ -109,27 +109,31 @@ class BenchmarkCommandTest(unittest.TestCase):
 
         discover.assert_not_called()
 
-    def test_resolves_one_materialized_archive_per_target(self):
+    def test_resolves_one_materialized_module_per_target(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             repository_root = Path(temporary_directory)
-            first_module = repository_root / "bazel-out/bin/first.loombc"
-            second_module = repository_root / "bazel-out/bin/second.loombc"
+            first_module = (
+                repository_root / "bazel-out/bin/first_benchmark_module.loombc"
+            )
+            second_module = (
+                repository_root / "bazel-out/bin/second_benchmark_module.loombc"
+            )
             first_module.parent.mkdir(parents=True)
             first_module.write_bytes(b"first")
             second_module.write_bytes(b"second")
-            cquery_output = (
+            selection_output = (
                 "@@//kernel/example:first_benchmark_module"
-                "\t@@//kernel/example:first\tbazel-out/bin/first.loombc\n"
-                "@@//motif/example/test:second\t@@//motif/example/test:second"
-                "\tbazel-out/bin/second.loombc\n"
+                "\tbazel-out/bin/first_benchmark_module.loombc\n"
+                "@@//motif/example/test:second_benchmark_module"
+                "\tbazel-out/bin/second_benchmark_module.loombc\n"
             )
 
-            bazel = mock.Mock(return_value=cquery_output)
+            bazel = mock.Mock(return_value=selection_output)
             modules = benchmark.resolve_modules(
                 repository_root,
                 [
                     "//kernel/example:first_benchmark_module",
-                    "//motif/example/test:second",
+                    "//motif/example/test:second_benchmark_module",
                 ],
                 ["-c", "opt", "--config=amdgpu"],
                 bazel,
@@ -144,7 +148,7 @@ class BenchmarkCommandTest(unittest.TestCase):
                     first_module,
                 ),
                 benchmark.BenchmarkModule(
-                    "//motif/example/test:second",
+                    "//motif/example/test:second_benchmark_module",
                     "//motif/example/test:second",
                     second_module,
                 ),
@@ -155,7 +159,7 @@ class BenchmarkCommandTest(unittest.TestCase):
         self.assertEqual(
             bazel.call_args.args[0][1],
             'set("//kernel/example:first_benchmark_module" '
-            '"//motif/example/test:second")',
+            '"//motif/example/test:second_benchmark_module")',
         )
 
     def test_parses_configured_source_closures(self):
@@ -228,7 +232,7 @@ class BenchmarkCommandTest(unittest.TestCase):
             },
         )
 
-    def test_incremental_workspace_executes_only_changed_archives(self):
+    def test_incremental_workspace_executes_only_changed_module_closures(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             repository_root = Path(temporary_directory)
             output_root = repository_root / "evidence" / "sweep"
@@ -258,10 +262,14 @@ class BenchmarkCommandTest(unittest.TestCase):
             )
             modules = [
                 benchmark.BenchmarkModule(
-                    "//kernel/example:first", "//kernel/example:first", first_module
+                    "//kernel/example:first",
+                    "//kernel/example:first",
+                    first_module,
                 ),
                 benchmark.BenchmarkModule(
-                    "//kernel/example:second", "//kernel/example:second", second_module
+                    "//kernel/example:second",
+                    "//kernel/example:second",
+                    second_module,
                 ),
             ]
             closures = {
@@ -360,6 +368,12 @@ class BenchmarkCommandTest(unittest.TestCase):
                     run_command=run,
                 )
                 self.assertEqual(run.call_count, 2)
+                self.assertFalse(
+                    any(
+                        argument.startswith("--library=")
+                        for argument in run.call_args_list[0].args[0]
+                    )
+                )
                 first_manifest = json.loads(
                     (output_root / "latest.json").read_text(encoding="utf-8")
                 )
@@ -430,7 +444,7 @@ class BenchmarkCommandTest(unittest.TestCase):
                 self.assertEqual(restored_manifest["summary"]["reused_module_count"], 2)
 
                 shared_source.write_bytes(b"shared source changed again")
-                first_module.write_bytes(b"first module changed")
+                first_module.write_bytes(b"first merged module changed")
                 run.reset_mock()
                 benchmark.run(
                     args,
@@ -459,6 +473,8 @@ class BenchmarkCommandTest(unittest.TestCase):
                         }
                     ],
                 )
+                self.assertIn("module_changed", changed_module["reasons"])
+                self.assertTrue(changed_module["artifact_changed"])
 
                 runner.write_bytes(b"changed runner")
                 run.reset_mock()

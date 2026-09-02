@@ -1,5 +1,5 @@
 load(
-    "@iree//build_tools/bazel:python.bzl",
+    "@hrx//build_tools/bazel:python.bzl",
     "iree_py_library",
     "iree_py_test",
 )
@@ -53,6 +53,13 @@ iree_py_test(
     name = "qualification_test",
     srcs = ["hrx_loom_kernels/qualification_test.py"],
     main = "hrx_loom_kernels/qualification_test.py",
+    deps = [":dev_tools"],
+)
+
+iree_py_test(
+    name = "setup_test",
+    srcs = ["hrx_loom_kernels/commands/setup_test.py"],
+    main = "hrx_loom_kernels/commands/setup_test.py",
     deps = [":dev_tools"],
 )
 

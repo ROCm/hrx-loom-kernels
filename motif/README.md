@@ -20,11 +20,12 @@ constraints, and implementation status.
 
 ## Dependency contract
 
-A motif package contains `func.def` and `func.template` building blocks and is
-declared with `loom_motif_library`. Motifs may depend on other motifs and on
-external Loom libraries. They never depend on `kernel/` or declare
-`kernel.def`; launch configuration and public execution ABI belong to kernel or
-composition roots.
+A motif package contains `func.def` and `template.def` building blocks and is
+declared with `loom_motif_library`. Each library owns one direct module and
+names every motif whose public symbols it uses as a direct dependency. Motifs
+may depend on other motifs and on external Loom libraries. They never depend on
+`kernel/` or declare `kernel.def`; launch configuration and public execution ABI
+belong to kernel or composition roots.
 
 Format-specific and target-specific motifs remain motifs. Reuse is the layer
 boundary; universality is not. Shared abstractions are extracted only after

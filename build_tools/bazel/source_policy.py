@@ -17,7 +17,7 @@ from typing import Iterable
 CONFIG_DECLARATION_PATTERN = re.compile(r"^\s*config\.decl(?:\s|@)", re.MULTILINE)
 KERNEL_DEFINITION_PATTERN = re.compile(r"^\s*kernel\.def(?:\s|@)", re.MULTILINE)
 LOCAL_RULES_LABEL = '"//build_tools/bazel:defs.bzl"'
-UPSTREAM_RULES_LABEL = '"@iree//loom/build_tools/bazel:defs.bzl"'
+UPSTREAM_RULES_LABEL = '"@hrx//loom/build_tools/bazel:defs.bzl"'
 
 
 def _code_without_line_comments(source: str) -> str:

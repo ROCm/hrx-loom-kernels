@@ -29,20 +29,30 @@ CAPTURE_SCHEMA = "hrx-loom-kernels.compile-report-capture.v1"
 COMPARISON_SCHEMA = "hrx-loom-kernels.compile-report-comparison.v1"
 SOURCE_SCHEMA = "hrx-loom-kernels.compile-report-source.v1"
 WORKSPACE_SCHEMA = "hrx-loom-kernels.compile-report-workspace.v1"
-LOOM_REPORT_TARGET = "@iree//loom/py/loom/tools:loom-compile-report"
+LOOM_REPORT_TARGET = "@hrx//loom/py/loom/tools:loom-compile-report"
 _REPORTS_DIRECTORY = ".reports"
 _DEFAULT_OUTPUT_DIRECTORY = f"{_REPORTS_DIRECTORY}/compile"
-_LOOM_COMPILATION_PROVIDER_SUFFIX = "%LoomCompilationInfo"
+_LOOM_BINARY_PROVIDER_SUFFIX = "%LoomBinaryInfo"
+_LOOM_AMDGPU_TARGET_PROFILE_PROVIDER_SUFFIX = "%LoomAmdgpuTargetProfileInfo"
 _COMMIT_PATTERN = re.compile(r"[0-9a-f]{40,64}")
-_PROVIDER_QUERY_EXPRESSION = (
+_BINARY_QUERY_EXPRESSION = (
     '"\\n".join(['
-    'str(target.label) + "\\t" + '
-    'provider.artifact.path + "\\t" + '
-    'provider.report.path + "\\t" + '
-    'provider.target.backend + "\\t" + '
-    "provider.target.target "
+    '"\\t".join(['
+    "str(target.label), "
+    "provider.primary_artifact.path, "
+    "str(len(provider.reports.to_list()))"
+    "] + [report.path for report in provider.reports.to_list()] + "
+    "[str(len(provider.target_profiles))] + "
+    "[str(profile.label) for profile in provider.target_profiles]) "
     "for key, provider in providers(target).items() "
-    f'if key.endswith("{_LOOM_COMPILATION_PROVIDER_SUFFIX}")])'
+    f'if key.endswith("{_LOOM_BINARY_PROVIDER_SUFFIX}") '
+    'and provider.kind == "kernel"])'
+)
+_AMDGPU_TARGET_PROFILE_QUERY_EXPRESSION = (
+    '"\\n".join(['
+    'str(target.label) + "\\t" + provider.target '
+    "for key, provider in providers(target).items() "
+    f'if key.endswith("{_LOOM_AMDGPU_TARGET_PROFILE_PROVIDER_SUFFIX}")])'
 )
 
 
@@ -52,7 +62,7 @@ class Error(UserError):
 
 @dataclass(frozen=True)
 class Compilation:
-    """One target-qualified compilation exposed by LoomCompilationInfo."""
+    """One target-qualified kernel product exposed by LoomBinaryInfo."""
 
     label: str
     artifact_path: PurePosixPath
@@ -273,6 +283,12 @@ def _execution_path(value: str) -> PurePosixPath:
     return path
 
 
+def _configured_target_label(value: str) -> str:
+    if not value or "\\" in value or any(character.isspace() for character in value):
+        raise Error(f"Invalid configured target label from Bazel cquery: {value!r}")
+    return value
+
+
 def _canonical_target_pattern(pattern: str) -> str:
     if not pattern or not pattern.startswith("//") or "\\" in pattern:
         raise Error(f"Invalid main-repository Bazel target pattern: {pattern!r}")
@@ -340,10 +356,90 @@ def _available_target_patterns(
 
 
 def _target_expression(target_patterns: list[str]) -> str:
-    selected = (
-        "set(" + " ".join(json.dumps(pattern) for pattern in target_patterns) + ")"
+    return f"rdeps(//..., {_set_expression(target_patterns)})"
+
+
+def _set_expression(labels: list[str]) -> str:
+    return "set(" + " ".join(json.dumps(label) for label in labels) + ")"
+
+
+def _parse_kernel_binary_row(
+    line: str,
+) -> tuple[str, PurePosixPath, PurePosixPath, str]:
+    fields = line.split("\t")
+    if len(fields) < 5:
+        raise Error(f"Invalid LoomBinaryInfo cquery row: {line}")
+    label = _normalize_main_label(fields[0])
+    artifact_path = _execution_path(fields[1])
+    try:
+        report_count = int(fields[2])
+    except ValueError as error:
+        raise Error(f"Invalid LoomBinaryInfo report count for {label}") from error
+    report_end = 3 + report_count
+    if report_end >= len(fields):
+        raise Error(f"Invalid LoomBinaryInfo cquery row: {line}")
+    if report_count != 1:
+        raise Error(
+            f"Kernel binary {label} requires exactly one compile report, "
+            f"got {report_count}"
+        )
+    report_path = _execution_path(fields[3])
+    try:
+        target_profile_count = int(fields[report_end])
+    except ValueError as error:
+        raise Error(
+            f"Invalid LoomBinaryInfo target-profile count for {label}"
+        ) from error
+    target_profile_fields = fields[report_end + 1 :]
+    if len(target_profile_fields) != target_profile_count:
+        raise Error(f"Invalid LoomBinaryInfo cquery row: {line}")
+    if target_profile_count != 1:
+        raise Error(
+            f"Kernel binary {label} requires exactly one target profile, "
+            f"got {target_profile_count}"
+        )
+    target_profile_label = _configured_target_label(target_profile_fields[0])
+    return label, artifact_path, report_path, target_profile_label
+
+
+def _resolve_amdgpu_target_profiles(
+    repository_root: Path,
+    target_profile_labels: list[str],
+    bazel_options: list[str],
+    bazel_executable: str,
+) -> dict[str, str]:
+    output = _bazel_output(
+        bazel_executable,
+        repository_root,
+        [
+            "cquery",
+            _set_expression(target_profile_labels),
+            *bazel_options,
+            "--output=starlark",
+            f"--starlark:expr={_AMDGPU_TARGET_PROFILE_QUERY_EXPRESSION}",
+        ],
     )
-    return f"rdeps(//..., {selected})"
+    profiles = {}
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        fields = line.split("\t")
+        if len(fields) != 2:
+            raise Error(f"Invalid Loom AMDGPU target-profile cquery row: {line}")
+        label = _configured_target_label(fields[0])
+        target = fields[1]
+        if not target:
+            raise Error(f"AMDGPU target profile has no selector: {label}")
+        if label in profiles:
+            raise Error(f"Bazel returned duplicate AMDGPU target profile: {label}")
+        profiles[label] = target
+    expected_labels = set(target_profile_labels)
+    if set(profiles) != expected_labels:
+        raise Error(
+            "Bazel did not resolve every kernel AMDGPU target profile: "
+            f"expected {sorted(expected_labels)}, resolved {sorted(profiles)}"
+        )
+    return profiles
 
 
 def discover_compilations(
@@ -352,7 +448,7 @@ def discover_compilations(
     bazel_options: list[str],
     bazel_executable: str,
 ) -> list[Compilation]:
-    """Discovers public LoomCompilationInfo leaves in a configured scope."""
+    """Discovers public Loom kernel binary products in a configured scope."""
     available_patterns = _available_target_patterns(
         repository_root,
         target_patterns,
@@ -368,26 +464,31 @@ def discover_compilations(
             _target_expression(available_patterns),
             *bazel_options,
             "--output=starlark",
-            f"--starlark:expr={_PROVIDER_QUERY_EXPRESSION}",
+            f"--starlark:expr={_BINARY_QUERY_EXPRESSION}",
         ],
     )
-    compilations = []
+    binary_rows = []
     for line in output.splitlines():
         if not line.strip():
             continue
-        fields = line.split("\t")
-        if len(fields) != 5:
-            raise Error(f"Invalid LoomCompilationInfo cquery row: {line}")
-        label, artifact_path, report_path, backend, target = fields
-        if not backend:
-            raise Error(f"Compilation target has no backend: {label}")
+        binary_rows.append(_parse_kernel_binary_row(line))
+    if not binary_rows:
+        return []
+    target_profiles = _resolve_amdgpu_target_profiles(
+        repository_root,
+        sorted({row[3] for row in binary_rows}),
+        bazel_options,
+        bazel_executable,
+    )
+    compilations = []
+    for label, artifact_path, report_path, target_profile_label in binary_rows:
         compilations.append(
             Compilation(
-                label=_normalize_main_label(label),
-                artifact_path=_execution_path(artifact_path),
-                report_path=_execution_path(report_path),
-                backend=backend,
-                target=target,
+                label=label,
+                artifact_path=artifact_path,
+                report_path=report_path,
+                backend="amdgpu-hal",
+                target=target_profiles[target_profile_label],
             )
         )
     labels = [compilation.label for compilation in compilations]
@@ -409,6 +510,7 @@ def build_compilations(
         [
             "build",
             *bazel_options,
+            "--output_groups=default,compile_reports",
             *[compilation.label for compilation in compilations],
         ],
     )

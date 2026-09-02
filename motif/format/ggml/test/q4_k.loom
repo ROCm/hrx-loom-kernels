@@ -3,7 +3,7 @@
 // The wrapper kernels deliberately own full-record addressing, launch
 // geometry, and logical-tail publication. Those choices exercise the public
 // carrier functions through realistic consumers without adding a production
-// launch ABI to the motif archive.
+// launch ABI to the motif module.
 func.decl @ggml_q4_k_unpack_codes16(%packed_codes: vector<4xi32>, %nibble: index) -> (vector<16xi8>)
 
 func.decl @ggml_q4_k_unpack_scale_minimum(%packed_scales: vector<3xi32>, %group: index) -> (i32, i32)

@@ -70,7 +70,14 @@ class QualificationTest(unittest.TestCase):
             qualification._check_motif_qualification(context)
 
         context.bazel.assert_called_once_with(
-            ["query", "qualification expression", "--output=label"],
+            [
+                "cquery",
+                "qualification expression",
+                "--output=label",
+                "--noimplicit_deps",
+                "--notool_deps",
+                "--noinclude_aspects",
+            ],
             capture_output=True,
         )
 

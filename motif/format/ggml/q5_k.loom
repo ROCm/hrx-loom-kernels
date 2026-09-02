@@ -19,7 +19,7 @@ func.decl @ggml_q4_k_unpack_codes16(%packed_codes: vector<4xi32>, %nibble: index
 // Recovers 16 consecutive unsigned codes from selected low/high carrier
 // packets. `group` selects both the low nibble and the corresponding high bit
 // for one of the eight 32-value groups in a Q5_K block.
-func.def inline @ggml_q5_k_unpack_codes16(%packed_codes: vector<4xi32>, %packed_high: vector<4xi32>, %group: index) -> (vector<16xi8>) {
+func.def public inline @ggml_q5_k_unpack_codes16(%packed_codes: vector<4xi32>, %packed_high: vector<4xi32>, %group: index) -> (vector<16xi8>) {
   %bounded_group = index.assume %group [range(%group, 0, 7)] : index
   %c2 = index.constant 2 : index
   %c4_i32v = vector.constant 4 : vector<4xi32>

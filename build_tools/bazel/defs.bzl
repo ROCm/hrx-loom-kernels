@@ -1,10 +1,9 @@
 """Repository policy wrappers around the public Loom build rules."""
 
-load("@iree//build_tools/bazel:python.bzl", "iree_py_test")
+load("@hrx//build_tools/bazel:python.bzl", "iree_py_test")
 load(
-    "@iree//loom/build_tools/bazel:defs.bzl",
-    _loom_compile = "loom_compile",
-    _loom_compile_target = "loom_compile_target",
+    "@hrx//loom/build_tools/bazel:defs.bzl",
+    _LoomLibraryInfo = "LoomLibraryInfo",
     _loom_execution_profile = "loom_execution_profile",
     _loom_kernel_library = "loom_kernel_library",
     _loom_library = "loom_library",
@@ -12,8 +11,6 @@ load(
     _loom_tools_toolchains = "loom_tools_toolchains",
 )
 
-loom_compile = _loom_compile
-loom_compile_target = _loom_compile_target
 loom_execution_profile = _loom_execution_profile
 loom_tools_toolchains = _loom_tools_toolchains
 
@@ -21,6 +18,47 @@ _BENCHMARK_MODULE_TAG = "loom-benchmark-module"
 _BENCHMARK_MODULE_SUFFIX = "_benchmark_module"
 _MOTIF_ADMISSION_TAG = "loom-admission-motif"
 _MOTIF_ADMISSION_SUFFIX = "_admission_motif"
+
+def _loom_benchmark_module_impl(ctx):
+    library = ctx.attr.library[_LoomLibraryInfo]
+    modules = [library.module] + library.transitive_dependencies.to_list()
+    output = ctx.actions.declare_file(ctx.label.name + ".loombc")
+    # Library construction already enforced direct-dependency ownership. This
+    # merge is a runner-only transport because iree-benchmark-loom accepts one
+    # module and has no separate-library input surface.
+    args = ctx.actions.args()
+    args.add("--mode=merge")
+    args.add("--to=bc")
+    args.add("--output=%s" % output.path)
+    args.add_all(modules)
+    ctx.actions.run(
+        arguments = [args],
+        executable = ctx.executable._loom_link,
+        inputs = depset(direct = modules),
+        mnemonic = "LoomBenchmarkModule",
+        outputs = [output],
+        progress_message = "Merging Loom benchmark module %s" % ctx.label,
+    )
+    return [DefaultInfo(files = depset([output]))]
+
+_loom_benchmark_module = rule(
+    implementation = _loom_benchmark_module_impl,
+    attrs = {
+        "library": attr.label(
+            mandatory = True,
+            providers = [_LoomLibraryInfo],
+        ),
+        "_loom_link": attr.label(
+            default = Label("@hrx//loom/src/loom/tools/loom-link"),
+            cfg = "exec",
+            executable = True,
+        ),
+    },
+    doc = (
+        "Merges one verified library closure for the single-module " +
+        "iree-benchmark-loom input boundary."
+    ),
+)
 
 def _is_package_or_subpackage(package, root):
     return package == root or package.startswith(root + "/")
@@ -84,9 +122,9 @@ def _declare_source_policy_test(name, layer, srcs, tags):
     )
 
 def _declare_benchmark_module(name, tags, testonly):
-    native.filegroup(
+    _loom_benchmark_module(
         name = name + _BENCHMARK_MODULE_SUFFIX,
-        srcs = [":" + name],
+        library = ":" + name,
         tags = tags + [_BENCHMARK_MODULE_TAG],
         testonly = testonly,
         visibility = ["//visibility:private"],
@@ -100,11 +138,14 @@ def _declare_motif_admission(name, tags):
         visibility = ["//visibility:private"],
     )
 
-def _validate_leaf_qualification(name, compile_targets, execution_profiles):
-    if not compile_targets:
-        fail("%s requires at least one compile target" % name)
+def _validate_execution_qualification(name, execution_profiles):
     if not execution_profiles:
         fail("%s requires at least one execution profile" % name)
+
+def _validate_kernel_qualification(name, targets, execution_profiles):
+    if not targets:
+        fail("%s requires at least one target profile" % name)
+    _validate_execution_qualification(name, execution_profiles)
 
 def loom_motif_library(
         name,
@@ -132,7 +173,7 @@ def loom_kernel_library(
         name,
         srcs,
         deps = [],
-        compile_targets = [],
+        targets = [],
         execution_profiles = [],
         tags = [],
         visibility = None):
@@ -141,13 +182,13 @@ def loom_kernel_library(
     if not _is_package_or_subpackage(package, "kernel"):
         fail("loom_kernel_library must be declared below kernel/, got //%s" % package)
     _validate_kernel_dependencies(package, deps)
-    _validate_leaf_qualification(name, compile_targets, execution_profiles)
+    _validate_kernel_qualification(name, targets, execution_profiles)
     _loom_kernel_library(
         name = name,
         srcs = srcs,
         deps = deps,
-        compile_targets = compile_targets,
         execution_profiles = execution_profiles,
+        targets = targets,
         tags = tags,
         visibility = visibility,
     )
@@ -158,7 +199,6 @@ def loom_test_library(
         name,
         srcs,
         deps = [],
-        compile_targets = [],
         execution_profiles = [],
         tags = [],
         visibility = None):
@@ -171,12 +211,11 @@ def loom_test_library(
         )
     if _is_package_or_subpackage(package, "motif"):
         _validate_motif_dependencies(package, deps)
-    _validate_leaf_qualification(name, compile_targets, execution_profiles)
+    _validate_execution_qualification(name, execution_profiles)
     _loom_test_library(
         name = name,
         srcs = srcs,
         deps = deps,
-        compile_targets = compile_targets,
         execution_profiles = execution_profiles,
         tags = tags,
         visibility = visibility,

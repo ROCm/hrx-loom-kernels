@@ -111,7 +111,7 @@ jobs:
           printf 'Building %s\n' "${execution_targets[@]}"
           bazel build \
             --config=amdgpu \
-            --@iree//runtime/src/iree/hal/drivers/amdgpu:targets="${LOOM_AMDGPU_TARGETS}" \
+            --@hrx//runtime/src/iree/hal/drivers/amdgpu:targets="${LOOM_AMDGPU_TARGETS}" \
             --profile="${RUNNER_TEMP}/bazel-profiles/amdgpu-build.profile.gz" \
             "${execution_targets[@]}"
 
@@ -237,7 +237,7 @@ jobs:
           printf 'Executing %s\n' "${execution_targets[@]}"
           bazel test \
             --config=amdgpu \
-            --@iree//runtime/src/iree/hal/drivers/amdgpu:targets="${LOOM_AMDGPU_TARGETS}" \
+            --@hrx//runtime/src/iree/hal/drivers/amdgpu:targets="${LOOM_AMDGPU_TARGETS}" \
             --nocache_test_results \
             --profile="${RUNNER_TEMP}/bazel-profiles/amdgpu-execute.profile.gz" \
             --test_env="IREE_HAL_AMDGPU_LIBHSA_PATH=${IREE_HAL_AMDGPU_LIBHSA_PATH}" \
