@@ -55,7 +55,7 @@ def check_sources(layer: str, sources: Iterable[tuple[str, str]]) -> list[str]:
 
 def _package_policy(layer: str, relative_directory: Path) -> tuple[str, str]:
     if "test" in relative_directory.parts:
-        return "test", "loom_test_library"
+        return "test", "loom_test"
     if layer == "kernel":
         return "kernel", "loom_kernel_library"
     return "motif", "loom_motif_library"

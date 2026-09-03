@@ -1,28 +1,31 @@
-load("//build_tools/bazel:defs.bzl", "loom_test_library")
-load("//target/amdgpu:profile.bzl", "AMDGPU_HARDWARE")
+load("//build_tools/bazel:defs.bzl", "loom_test")
+load(
+    "@hrx//loom/target/amdgpu:execution_profiles.bzl",
+    "AMDGPU_HARDWARE_PROFILE",
+)
 
 package(default_visibility = ["//visibility:public"])
 
-loom_test_library(
+loom_test(
     name = "q4_k",
     srcs = ["q4_k.loom"],
     deps = ["//motif/format/ggml:q4_k"],
-    execution_profiles = [AMDGPU_HARDWARE],
+    execution_profile = AMDGPU_HARDWARE_PROFILE,
 )
 
-loom_test_library(
+loom_test(
     name = "q5_k",
     srcs = ["q5_k.loom"],
     deps = [
         "//motif/format/ggml:q4_k",
         "//motif/format/ggml:q5_k",
     ],
-    execution_profiles = [AMDGPU_HARDWARE],
+    execution_profile = AMDGPU_HARDWARE_PROFILE,
 )
 
-loom_test_library(
+loom_test(
     name = "q6_k",
     srcs = ["q6_k.loom"],
     deps = ["//motif/format/ggml:q6_k"],
-    execution_profiles = [AMDGPU_HARDWARE],
+    execution_profile = AMDGPU_HARDWARE_PROFILE,
 )

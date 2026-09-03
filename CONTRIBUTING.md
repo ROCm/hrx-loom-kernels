@@ -8,8 +8,8 @@ This repository admits reusable compiler inputs, not a catalog of model ports. A
 | --- | --- | --- |
 | `motif/` | Target-neutral data representations and algorithms expressed as `func.def`, `template.def`, encodings, and related declarations. | Canonical and lint-clean source, scoped documentation, no launch surface, and reachability from a qualified kernel or test leaf. |
 | `kernel/` | Concrete `kernel.def` entry points implementing one operation contract and ABI. | A semantic benchmark plan, at least one target profile, at least one execution profile, and dependencies confined to production motifs. |
-| `motif/**/test/` and `kernel/**/test/` | Test-only wrapper programs used when production code has no natural launch witness. | Private/test-only module, semantic benchmarks and correctness cases, and at least one execution profile. |
-| `target/` | Repository-owned execution profiles and any genuinely local target policy. | Runner resources and tool arguments contained in the target package; canonical HRX target profiles consumed directly when no local policy differs. |
+| `motif/**/test/` and `kernel/**/test/` | Test-only wrapper programs used when production code has no natural launch witness. | Private root-owned test module, semantic benchmarks and correctness cases, and one execution profile. |
+| `target/` | Genuinely repository-specific target or execution policy. | A concrete policy difference that cannot be expressed by canonical HRX profiles; upstream profiles are consumed directly otherwise. |
 | `model/` | Composition roots for model and command programs. | A repository-owned model admission rule must define modules, planning, execution, and deployment behavior before source enters this layer. |
 
 Source-bearing `model/` and `target/` packages currently fail repository policy. That failure is intentional: raw `.loom` files cannot bypass the same build and evidence contract applied to motifs and kernels. A new source surface begins with its repository rule and production lifecycle.
@@ -51,7 +51,7 @@ Keeping a production kernel and its cases in one `.loom` file is the shortest it
 
 Every kernel and test leaf is benchmark-planned by the public Loom runner. A module with no `check.benchmark` fails planning. Benchmarks name correctness cases and select workloads that expose meaningful operating regimes rather than one flattering shape. Decode, small-batch, prefill, tails, and format-specific stress shapes are separate benchmark declarations when they exercise different specialization or hardware behavior.
 
-Each kernel names at least one target profile proving that the linked program lowers through a real backend and produces a final artifact. Each kernel and test leaf names at least one execution profile proving its public cases through a real runner. Test wrappers remain execution witnesses rather than standalone target products. Profiles are reusable and target-owned; common library rules contain no gfx, Vulkan, HIP, or other device-specific conditionals. Additional kernel targets strengthen portability without recompiling target-neutral motif modules independently for every leaf.
+Each kernel names at least one target profile proving that the linked program lowers through a real backend and produces a final artifact. Each kernel names at least one execution profile, while each test leaf names one execution profile proving its public cases through a real runner. Test wrappers remain execution witnesses rather than standalone target products. Profiles are reusable and target-owned; common library rules contain no gfx, Vulkan, HIP, or other device-specific conditionals. Additional kernel targets strengthen portability without recompiling target-neutral motif modules independently for every leaf.
 
 ## Performance evidence
 
@@ -70,7 +70,7 @@ python dev.py build
 python dev.py compile-report --base=origin/main
 ```
 
-`dev.py lint` checks filesystem policy and asks Bazel to prove that every source-bearing motif reaches a benchmarkable kernel or test leaf. `dev.py test` runs generated format, public lint, benchmark-plan, target-compilation, and available execution tests. Hardware tests without a matching local resource skip locally and execute through the repository runner matrix.
+`dev.py lint` checks filesystem policy and asks Bazel to prove that every source-bearing motif reaches a benchmarkable kernel or test leaf. `dev.py test` first checks canonical formatting for the complete repository, then runs source policy, public lint, benchmark-plan, target-compilation, and available execution tests. Hardware tests without a matching local resource skip locally and execute through the repository runner matrix.
 
 A focused performance capture adds an explicit target and device:
 

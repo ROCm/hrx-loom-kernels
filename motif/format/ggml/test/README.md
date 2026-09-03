@@ -3,8 +3,9 @@
 These private programs wrap target-neutral GGML carrier functions in deliberate
 launch and buffer boundaries. Production modules contain only the motifs in
 the parent package; the wrappers, cases, and microbenchmarks remain test-only
-and are passed directly to the correctness runner with those production
-modules as libraries.
+and become roots in one linked test module. Production motifs participate only
+as dependency libraries, so their own test-only symbols cannot leak into this
+test's execution surface.
 
 Direct-carrier cases isolate bit-field interpretation and selector ordering.
 Record-level cases additionally cover the byte addressing, complete blocks,

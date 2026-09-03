@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from build_tools.py.hrx_loom_kernels import qualification
+from build_tools.py.hrx_loom_kernels.commands import format as format_command
 from build_tools.py.hrx_loom_kernels.commands import test as test_command
 from build_tools.py.hrx_loom_kernels.context import RepositoryContext
 
@@ -33,9 +34,13 @@ class TestCommandTest(unittest.TestCase):
         context = mock.Mock(spec=RepositoryContext)
         context.repository_root = Path("/repository")
 
-        with mock.patch.object(qualification, "lint_repository") as lint_repository:
+        with (
+            mock.patch.object(format_command, "check_repository") as check_repository,
+            mock.patch.object(qualification, "lint_repository") as lint_repository,
+        ):
             test_command._run(args, context)
 
+        check_repository.assert_called_once_with(context)
         lint_repository.assert_called_once_with(context)
         context.bazel.assert_called_once_with(
             [
@@ -51,9 +56,13 @@ class TestCommandTest(unittest.TestCase):
         context = mock.Mock(spec=RepositoryContext)
         context.repository_root = Path("/repository")
 
-        with mock.patch.object(qualification, "lint_repository"):
+        with (
+            mock.patch.object(format_command, "check_repository") as check_repository,
+            mock.patch.object(qualification, "lint_repository"),
+        ):
             test_command._run(args, context)
 
+        check_repository.assert_called_once_with(context)
         context.bazel.assert_called_once_with(["test", "//..."])
 
 

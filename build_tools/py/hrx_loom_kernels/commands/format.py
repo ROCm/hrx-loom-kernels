@@ -148,9 +148,22 @@ def _run_loom_format(
     )
 
 
+def check_repository(context: RepositoryContext) -> None:
+    """Checks every Loom source admitted to the repository workspace."""
+    sources = _loom_sources(context.repository_root, [])
+    if not sources:
+        print("No Loom source files to format", flush=True)
+        return
+    _run_loom_format(context, "--check", sources)
+    print(f"Checked {len(sources)} Loom source files", flush=True)
+
+
 def _run(args: argparse.Namespace, context: RepositoryContext) -> None:
     if args.staged and args.sources:
         raise UserError("--staged cannot be combined with explicit source paths")
+    if args.mode == "check" and not args.staged and not args.sources:
+        check_repository(context)
+        return
     sources = (
         _staged_loom_sources(context)
         if args.staged

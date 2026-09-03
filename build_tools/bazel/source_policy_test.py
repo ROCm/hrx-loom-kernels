@@ -134,8 +134,8 @@ class SourcePolicyTest(unittest.TestCase):
                 "kernel.def @q3() {\n} launch() {\n  kernel.return\n}\n"
             )
             (test_root / "BUILD.bazel").write_text(
-                'load("//build_tools/bazel:defs.bzl", "loom_test_library")\n'
-                'loom_test_library(name = "q3", srcs = ["q3.loom"])\n'
+                'load("//build_tools/bazel:defs.bzl", "loom_test")\n'
+                'loom_test(name = "q3", srcs = ["q3.loom"])\n'
             )
             self.assertEqual(source_policy.check_repository(repository_root), [])
 
@@ -182,7 +182,7 @@ class SourcePolicyTest(unittest.TestCase):
                 source_policy.check_repository(repository_root),
                 [
                     "motif/format/weird/test/BUILD.bazel: test packages must "
-                    "declare loom_test_library",
+                    "declare loom_test",
                 ],
             )
 

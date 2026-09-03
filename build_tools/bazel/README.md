@@ -10,27 +10,23 @@ owned by this repository:
   entry points as leaf launch surfaces, confines dependencies to motifs,
   requires at least one typed target profile and execution profile, and adds
   the normal format, planning, final-product compilation, and execution checks.
-- `loom_test_library` is confined to explicit `test/` packages, keeps its
-  wrapper module private and test-only, and passes authored test programs
-  directly to correctness runners with production modules as libraries. Test
-  leaves require execution qualification but do not manufacture standalone
-  target products.
-- Execution-profile and Loom toolchain declarations are re-exported unchanged.
+- `loom_test` is confined to explicit `test/` packages and delegates to HRX's
+  root-owned linked test module. Test leaves require one execution profile but
+  do not manufacture standalone target products.
 
-Each kernel and test library emits a private runner module carrying the stable
-`loom-benchmark-module` tag. HRX verifies direct dependencies while producing
-the relocatable library modules; the repository rule then merges that verified
-closure solely for `iree-benchmark-loom`, whose current command line accepts
-one module and no separate libraries. The merged product is not a published
-library or a re-export boundary. Generated format, plan, compile, and execution
-tests do not carry benchmark-discovery metadata.
+Each kernel and test declaration emits a private filegroup carrying the stable
+`loom-benchmark-module` tag. It forwards HRX's linked test module, which retains
+cases and benchmarks owned by the root while excluding test-only symbols from
+dependencies. The marker adds discovery metadata without introducing another
+link or re-export boundary. Generated format, plan, compile, and execution tests
+do not carry benchmark-discovery metadata.
 
 [`source_policy.py`](source_policy.py) verifies the filesystem-level portion of
 the contract. Every motif and kernel package has an adjacent `BUILD.bazel`,
 explicitly declares each `.loom` source, loads the repository wrappers, and has
 a scoped README chain up to its layer root. Motif sources contain no
 `kernel.def`; kernel packages contain at least one. Sources below an explicit
-`test/` component use `loom_test_library` and may declare private wrapper
+`test/` component use `loom_test` and may declare private wrapper
 kernels without weakening the production motif contract.
 
 `python dev.py lint` runs the complete repository check. `python dev.py build`

@@ -19,8 +19,8 @@ operation contract and ABI. For example, the
 
 ## Quickstart
 
-Select the HRX revision pinned by this repository and build an optimized kernel
-module together with its motif dependency:
+Select the HRX revision pinned by this repository and build its root-owned test
+module together with the reusable kernel and motif modules:
 
 ```shell
 python dev.py setup --release
@@ -28,7 +28,7 @@ bazelisk build -c opt \
   //kernel/ggml/quantize:q8_1_x4_f32_benchmark_module
 LOOM_MODULE="$PWD/bazel-bin/kernel/ggml/quantize/q8_1_x4_f32.loombc"
 LOOM_LIBRARY="$PWD/bazel-bin/motif/format/ggml/q8_1_x4.loombc"
-LOOM_BENCHMARK_MODULE="$PWD/bazel-bin/kernel/ggml/quantize/q8_1_x4_f32_benchmark_module.loombc"
+LOOM_TEST_MODULE="$PWD/bazel-bin/kernel/ggml/quantize/q8_1_x4_f32_test_module.loombc"
 ```
 
 Run every public correctness case on an AMD GPU:
@@ -36,8 +36,7 @@ Run every public correctness case on an AMD GPU:
 ```shell
 bazelisk run -c opt --config=amdgpu \
   @hrx//loom/src/loom/tools/iree-test-loom -- \
-  "$LOOM_MODULE" \
-  --library="$LOOM_LIBRARY" \
+  "$LOOM_TEST_MODULE" \
   --device=amdgpu://0 \
   --sanitizer=access
 ```
@@ -51,7 +50,7 @@ Benchmark a declared workload from the same module closure:
 ```shell
 bazelisk run -c opt --config=amdgpu \
   @hrx//loom/src/loom/tools/iree-benchmark-loom -- \
-  "$LOOM_BENCHMARK_MODULE" \
+  "$LOOM_TEST_MODULE" \
   --device=amdgpu://0 \
   --benchmark=@ggml_quantize_q8_1_x4_f32_decode \
   --measure=dispatch_complete \
@@ -82,9 +81,9 @@ so its schemas and lifecycle remain independent. Benchmark sweep workspaces use
 ### Sweep repository benchmarks
 
 `dev.py benchmark` discovers every kernel and test module admitted to the
-repository benchmark corpus, builds a closed runner module from each verified
-library closure plus the public benchmark runner from the selected HRX
-revision, and maintains a local sweep workspace:
+repository benchmark corpus, uses HRX's linked root-owned test module plus the
+public benchmark runner from the selected HRX revision, and maintains a local
+sweep workspace:
 
 ```shell
 SWEEP_ROOT=.reports/benchmark/gfx1100
@@ -101,7 +100,7 @@ python dev.py benchmark \
 Repeating the command is incremental. Bazel rebuilds only invalidated actions,
 and the sweep executes only roots whose closed benchmark `.loombc`, benchmark
 runner, or invocation identity changed. A shared motif edit therefore reruns
-the exact consumers whose merged runner input changed; an edit that produces a
+the exact consumers whose linked runner input changed; an edit that produces a
 byte-identical module is reported as potentially affected without repeating the
 physical benchmark.
 `--rerun-all` deliberately captures fresh measurements for every selected
@@ -289,8 +288,7 @@ attributable to the kernel or compiler change under investigation.
 | [`kernel/ggml/`](kernel/ggml/) | Leaf compatibility implementations of GGML operation kernels. |
 | [`kernel/ggml/quantize/`](kernel/ggml/quantize/) | GGML-compatible quantization entry points. |
 | [`model/`](model/) | Model and command-program composition roots. |
-| [`target/`](target/) | Repository execution profiles and target-policy integration. |
-| [`target/amdgpu/`](target/amdgpu/) | AMDGPU hardware execution policy. |
+| [`target/`](target/) | Admission slot for genuinely repository-specific target policy. |
 
 ## Build and test
 
@@ -335,12 +333,15 @@ python dev.py test
 
 `python dev.py format --fix` rewrites every `.loom` source through the selected
 compiler's canonical formatter and verifies the result. `--check` is read-only,
-and passing paths limits either mode to those files. Direct
-`bazelisk test //...` invocations retain per-library format tests even when the
-Git hook is not installed.
+and passing paths limits either mode to those files. `dev.py test` begins with
+the complete repository format check, including test-only and experimental
+sources; direct `bazelisk test //...` invocations retain HRX's generated
+per-library checks.
 
 `loom_motif_library` emits one linkable `.loombc` module and validates that its
 sources remain non-launchable. `loom_kernel_library` adds launchable kernels,
-benchmark planning, typed target products, and structured compile reports. A
-root module plus its explicit library closure is the portable input to JIT
-specialization; target products are the loader-ready deployment artifacts.
+root-owned test-module planning, typed target products, and structured compile
+reports. `loom_test` links private motif witnesses into the same root-owned test
+module contract without manufacturing deployment products. A root module plus
+its explicit library closure is the portable input to JIT specialization;
+target products are the loader-ready deployment artifacts.

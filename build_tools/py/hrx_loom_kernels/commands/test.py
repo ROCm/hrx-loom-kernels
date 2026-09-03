@@ -10,6 +10,7 @@ from typing import Any
 
 from .. import qualification
 from ..context import RepositoryContext
+from . import format as format_command
 
 
 def _bazel_arguments(arguments: list[str]) -> list[str]:
@@ -17,6 +18,7 @@ def _bazel_arguments(arguments: list[str]) -> list[str]:
 
 
 def _run(args: argparse.Namespace, context: RepositoryContext) -> None:
+    format_command.check_repository(context)
     qualification.lint_repository(context)
     targets = args.targets or ["//..."]
     context.bazel(["test", *_bazel_arguments(args.bazel_args), *targets])

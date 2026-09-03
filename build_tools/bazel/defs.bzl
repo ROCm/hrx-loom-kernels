@@ -3,62 +3,15 @@
 load("@hrx//build_tools/bazel:python.bzl", "iree_py_test")
 load(
     "@hrx//loom/build_tools/bazel:defs.bzl",
-    _LoomLibraryInfo = "LoomLibraryInfo",
-    _loom_execution_profile = "loom_execution_profile",
     _loom_kernel_library = "loom_kernel_library",
     _loom_library = "loom_library",
-    _loom_test_library = "loom_test_library",
-    _loom_tools_toolchains = "loom_tools_toolchains",
+    _loom_test = "loom_test",
 )
-
-loom_execution_profile = _loom_execution_profile
-loom_tools_toolchains = _loom_tools_toolchains
 
 _BENCHMARK_MODULE_TAG = "loom-benchmark-module"
 _BENCHMARK_MODULE_SUFFIX = "_benchmark_module"
 _MOTIF_ADMISSION_TAG = "loom-admission-motif"
 _MOTIF_ADMISSION_SUFFIX = "_admission_motif"
-
-def _loom_benchmark_module_impl(ctx):
-    library = ctx.attr.library[_LoomLibraryInfo]
-    modules = [library.module] + library.transitive_dependencies.to_list()
-    output = ctx.actions.declare_file(ctx.label.name + ".loombc")
-    # Library construction already enforced direct-dependency ownership. This
-    # merge is a runner-only transport because iree-benchmark-loom accepts one
-    # module and has no separate-library input surface.
-    args = ctx.actions.args()
-    args.add("--mode=merge")
-    args.add("--to=bc")
-    args.add("--output=%s" % output.path)
-    args.add_all(modules)
-    ctx.actions.run(
-        arguments = [args],
-        executable = ctx.executable._loom_link,
-        inputs = depset(direct = modules),
-        mnemonic = "LoomBenchmarkModule",
-        outputs = [output],
-        progress_message = "Merging Loom benchmark module %s" % ctx.label,
-    )
-    return [DefaultInfo(files = depset([output]))]
-
-_loom_benchmark_module = rule(
-    implementation = _loom_benchmark_module_impl,
-    attrs = {
-        "library": attr.label(
-            mandatory = True,
-            providers = [_LoomLibraryInfo],
-        ),
-        "_loom_link": attr.label(
-            default = Label("@hrx//loom/src/loom/tools/loom-link"),
-            cfg = "exec",
-            executable = True,
-        ),
-    },
-    doc = (
-        "Merges one verified library closure for the single-module " +
-        "iree-benchmark-loom input boundary."
-    ),
-)
 
 def _is_package_or_subpackage(package, root):
     return package == root or package.startswith(root + "/")
@@ -121,12 +74,12 @@ def _declare_source_policy_test(name, layer, srcs, tags):
         visibility = ["//visibility:private"],
     )
 
-def _declare_benchmark_module(name, tags, testonly):
-    _loom_benchmark_module(
+def _declare_benchmark_module(name, module, tags):
+    native.filegroup(
         name = name + _BENCHMARK_MODULE_SUFFIX,
-        library = ":" + name,
+        srcs = [module],
         tags = tags + [_BENCHMARK_MODULE_TAG],
-        testonly = testonly,
+        testonly = True,
         visibility = ["//visibility:private"],
     )
 
@@ -138,14 +91,14 @@ def _declare_motif_admission(name, tags):
         visibility = ["//visibility:private"],
     )
 
-def _validate_execution_qualification(name, execution_profiles):
+def _validate_execution_profiles(name, execution_profiles):
     if not execution_profiles:
         fail("%s requires at least one execution profile" % name)
 
 def _validate_kernel_qualification(name, targets, execution_profiles):
     if not targets:
         fail("%s requires at least one target profile" % name)
-    _validate_execution_qualification(name, execution_profiles)
+    _validate_execution_profiles(name, execution_profiles)
 
 def loom_motif_library(
         name,
@@ -192,33 +145,46 @@ def loom_kernel_library(
         tags = tags,
         visibility = visibility,
     )
-    _declare_benchmark_module(name, tags, testonly = False)
+    _declare_benchmark_module(
+        name,
+        ":" + name + "_test_module",
+        tags,
+    )
     _declare_source_policy_test(name, "kernel", srcs, tags)
 
-def loom_test_library(
+def loom_test(
         name,
         srcs,
         deps = [],
-        execution_profiles = [],
+        args = [],
+        execution_profile = None,
+        size = "small",
         tags = [],
         visibility = None):
     """Declares private wrapper programs in an explicit test package."""
     package = native.package_name()
     if "test" not in package.split("/"):
         fail(
-            "loom_test_library must be declared below an explicit test/ " +
+            "loom_test must be declared below an explicit test/ " +
             "package, got //%s" % package,
         )
     if _is_package_or_subpackage(package, "motif"):
         _validate_motif_dependencies(package, deps)
-    _validate_execution_qualification(name, execution_profiles)
-    _loom_test_library(
+    if execution_profile == None:
+        fail("%s requires an execution profile" % name)
+    _loom_test(
         name = name,
         srcs = srcs,
+        args = args,
         deps = deps,
-        execution_profiles = execution_profiles,
+        execution_profile = execution_profile,
+        size = size,
         tags = tags,
         visibility = visibility,
     )
-    _declare_benchmark_module(name, tags, testonly = True)
+    _declare_benchmark_module(
+        name,
+        ":" + name + "_module",
+        tags,
+    )
     _declare_source_policy_test(name, "test", srcs, tags)
